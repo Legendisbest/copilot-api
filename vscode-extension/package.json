@@ -22,11 +22,6 @@
   "publisher": "local",
   "type": "module",
   "main": "./dist/extension.js",
-  "files": [
-    "dist/**",
-    "media/**",
-    "CHANGELOG.md"
-  ],
   "scripts": {
     "build": "bun scripts/build.ts",
     "build:debug": "bun scripts/build.ts --debug",
