@@ -39,6 +39,25 @@ interface RunServerOptions {
   adminPassword?: string
 }
 
+const DEFAULT_PORT = 4141
+
+function parsePortOrThrow(rawPort: string): number {
+  const normalizedPort = rawPort.trim()
+  if (!/^\d+$/.test(normalizedPort)) {
+    throw new Error(
+      `Invalid port "${rawPort}". Expected an integer between 1 and 65535.`,
+    )
+  }
+
+  const port = Number(normalizedPort)
+  if (port < 1 || port > 65535) {
+    throw new Error(
+      `Invalid port "${rawPort}". Expected an integer between 1 and 65535.`,
+    )
+  }
+  return port
+}
+
 async function tryReadLegacyGithubToken(): Promise<string | null> {
   try {
     const token = await fs.readFile(PATHS.GITHUB_TOKEN_PATH, "utf8")
@@ -175,6 +194,13 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   }
 
   const serverUrl = `http://localhost:${options.port}`
+  const railwayDomain =
+    process.env.RAILWAY_PUBLIC_DOMAIN ?? process.env.RAILWAY_STATIC_URL
+  const publicServerUrl = railwayDomain
+    ? /^https?:\/\//.test(railwayDomain)
+      ? railwayDomain
+      : `https://${railwayDomain}`
+    : serverUrl
 
   if (options.claudeCode) {
     invariant(state.models, "Models should be loaded by now")
@@ -221,10 +247,10 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   }
 
   const dashboardUrl = persistentStore
-    ? `\nDashboard: ${serverUrl}/dashboard`
+    ? `\nDashboard: ${publicServerUrl}/dashboard`
     : ""
   consola.box(
-    `Usage Viewer: https://ericc-ch.github.io/copilot-api?endpoint=${serverUrl}/usage${dashboardUrl}`,
+    `Usage Viewer: https://ericc-ch.github.io/copilot-api?endpoint=${publicServerUrl}/usage${dashboardUrl}`,
   )
 
   const { server } = await import("./server")
@@ -232,6 +258,7 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   serve({
     fetch: server.fetch as ServerHandler,
     port: options.port,
+    hostname: process.env.HOST ?? "0.0.0.0",
     bun: {
       idleTimeout: 0,
     },
@@ -247,7 +274,7 @@ export const start = defineCommand({
     port: {
       alias: "p",
       type: "string",
-      default: "4141",
+      default: process.env.PORT ?? String(DEFAULT_PORT),
       description: "Port to listen on",
     },
     verbose: {
@@ -334,7 +361,7 @@ export const start = defineCommand({
       rateLimitRaw === undefined ? undefined : Number.parseInt(rateLimitRaw, 10)
 
     return runServer({
-      port: Number.parseInt(args.port, 10),
+      port: parsePortOrThrow(args.port),
       verbose: args.verbose,
       accountType: args["account-type"],
       manual: args.manual,

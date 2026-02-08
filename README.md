@@ -132,6 +132,20 @@ The Docker image includes:
 - Health check for container monitoring
 - Pinned base image version for reproducible builds
 
+### Deploy on Railway
+
+This repo is Railway-ready via the included `Dockerfile`.
+
+1. Create a new Railway service from this repository.
+2. Railway will build with Docker automatically.
+3. Set required env vars: `GH_TOKEN` (recommended for non-interactive startup) and `ADMIN_PASSWORD` (recommended to protect `/admin`).
+4. Set one persistent database option for multi-account mode: `DATABASE_URL` (Postgres), or `DB_CLIENT=mysql` + `MYSQL_URL`, or `DB_CLIENT=mongodb` + `MONGODB_URL`.
+
+Notes:
+- No custom start command is required (`ENTRYPOINT` + `CMD ["start"]` are already set).
+- The app auto-uses Railway `PORT` env var, so it will bind to the port Railway provides.
+- If you skip database config, the app runs in single-account mode and relies on local filesystem token persistence.
+
 ## Using with npx
 
 You can run the project directly using npx:
@@ -169,7 +183,7 @@ The following command line options are available for the `start` command:
 
 | Option         | Description                                                                   | Default    | Alias |
 | -------------- | ----------------------------------------------------------------------------- | ---------- | ----- |
-| --port         | Port to listen on                                                             | 4141       | -p    |
+| --port         | Port to listen on                                                             | `PORT` env or `4141` | -p    |
 | --verbose      | Enable verbose logging                                                        | false      | -v    |
 | --account-type | Account type to use (individual, business, enterprise)                        | individual | -a    |
 | --manual       | Enable manual request approval                                                | false      | none  |
