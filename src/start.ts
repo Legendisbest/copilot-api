@@ -39,7 +39,7 @@ interface RunServerOptions {
   adminPassword?: string
 }
 
-const DEFAULT_PORT = 4141
+const DEFAULT_PORT = 8080
 
 function parsePortOrThrow(rawPort: string): number {
   const normalizedPort = rawPort.trim()

@@ -31,11 +31,11 @@ COPY --from=builder /app/dist ./dist
 COPY --from=web-builder /dist/web ./dist/web
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD sh -c 'wget --spider -q "http://localhost:${PORT:-4141}/" || exit 1'
+  CMD sh -c 'wget --spider -q "http://localhost:${PORT:-8080}/" || exit 1'
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-EXPOSE 4141
+EXPOSE 8080
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["start"]

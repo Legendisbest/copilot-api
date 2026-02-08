@@ -10,7 +10,7 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      "/admin": "http://localhost:4141",
+      "/admin": "http://localhost:8080",
     },
   },
 })

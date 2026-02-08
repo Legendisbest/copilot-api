@@ -74,7 +74,7 @@ mkdir -p ./copilot-data
 # Run the container with a bind mount to persist the token
 # This ensures your authentication survives container restarts
 
-docker run -p 4141:4141 -v $(pwd)/copilot-data:/root/.local/share/copilot-api copilot-api
+docker run -p 8080:8080 -v $(pwd)/copilot-data:/root/.local/share/copilot-api copilot-api
 ```
 
 > **Note:**
@@ -86,26 +86,26 @@ You can pass the GitHub token and DB settings directly as environment variables:
 
 ```sh
 # Run with GitHub token
-docker run -p 4141:4141 -e GH_TOKEN=your_github_token_here copilot-api
+docker run -p 8080:8080 -e GH_TOKEN=your_github_token_here copilot-api
 
 # Run with explicit start flags (entrypoint auto-routes flags to the start subcommand)
-docker run -p 4141:4141 -e GH_TOKEN=your_token copilot-api --verbose --port 4141
+docker run -p 8080:8080 -e GH_TOKEN=your_token copilot-api --verbose --port 8080
 
 # PostgreSQL
-docker run -p 4141:4141 \
+docker run -p 8080:8080 \
   -e GH_TOKEN=your_token \
   -e DATABASE_URL=postgres://user:pass@db:5432/copilot \
   copilot-api
 
 # MySQL
-docker run -p 4141:4141 \
+docker run -p 8080:8080 \
   -e GH_TOKEN=your_token \
   -e DB_CLIENT=mysql \
   -e MYSQL_URL=mysql://user:pass@db:3306/copilot \
   copilot-api
 
 # MongoDB
-docker run -p 4141:4141 \
+docker run -p 8080:8080 \
   -e GH_TOKEN=your_token \
   -e DB_CLIENT=mongodb \
   -e MONGODB_URL=mongodb://user:pass@db:27017/copilot \
@@ -120,7 +120,7 @@ services:
   copilot-api:
     build: .
     ports:
-      - "4141:4141"
+      - "8080:8080"
     environment:
       - GH_TOKEN=your_github_token_here
     restart: unless-stopped
@@ -183,7 +183,7 @@ The following command line options are available for the `start` command:
 
 | Option         | Description                                                                   | Default    | Alias |
 | -------------- | ----------------------------------------------------------------------------- | ---------- | ----- |
-| --port         | Port to listen on                                                             | `PORT` env or `4141` | -p    |
+| --port         | Port to listen on                                                             | `PORT` env or `8080` | -p    |
 | --verbose      | Enable verbose logging                                                        | false      | -v    |
 | --account-type | Account type to use (individual, business, enterprise)                        | individual | -a    |
 | --manual       | Enable manual request approval                                                | false      | none  |
@@ -323,7 +323,7 @@ After starting the server, a URL to the Copilot Usage Dashboard will be displaye
     npx @jeffreycao/copilot-api@latest start
     ```
 2.  The server will output a URL to the usage viewer. Copy and paste this URL into your browser. It will look something like this:
-    `https://ericc-ch.github.io/copilot-api?endpoint=http://localhost:4141/usage`
+    `https://ericc-ch.github.io/copilot-api?endpoint=http://localhost:8080/usage`
     - If you use the `start.bat` script on Windows, this page will open automatically.
 
 The dashboard provides a user-friendly interface to view your Copilot usage data:
@@ -362,7 +362,7 @@ Here is an example `.claude/settings.json` file:
 ```json
 {
   "env": {
-    "ANTHROPIC_BASE_URL": "http://localhost:4141",
+    "ANTHROPIC_BASE_URL": "http://localhost:8080",
     "ANTHROPIC_AUTH_TOKEN": "dummy",
     "ANTHROPIC_MODEL": "gpt-5.2",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "gpt-5.2",
@@ -416,3 +416,4 @@ Please include the following in `CLAUDE.md` (for Claude usage):
 
 - Prohibited from directly asking questions to users, MUST use AskUserQuestion tool.
 - Once you can confirm that the task is complete, MUST use AskUserQuestion tool to make user confirm. The user may respond with feedback if they are not satisfied with the result, which you can use to make improvements and try again.
+
