@@ -26,6 +26,8 @@ const webDistPath = getWebDistPath()
 
 // Serve static files for the dashboard SPA
 dashboardRoute.get("/*", async (c) => {
+  const isDashboardPath = c.req.path === "/dashboard"
+    || c.req.path.startsWith("/dashboard/")
   const reqPath = c.req.path.replace("/dashboard", "") || "/"
   const filePath = path.join(webDistPath, reqPath === "/" ? "index.html" : reqPath)
 
@@ -52,11 +54,13 @@ dashboardRoute.get("/*", async (c) => {
       })
     }
 
-    // SPA fallback: serve index.html for any unmatched route
-    const indexPath = path.join(webDistPath, "index.html")
-    if (fs.existsSync(indexPath)) {
-      const content = fs.readFileSync(indexPath, "utf-8")
-      return c.html(content)
+    // SPA fallback only for dashboard routes.
+    if (isDashboardPath) {
+      const indexPath = path.join(webDistPath, "index.html")
+      if (fs.existsSync(indexPath)) {
+        const content = fs.readFileSync(indexPath, "utf-8")
+        return c.html(content)
+      }
     }
 
     return c.text("Dashboard not built. Run: npm run build:web", 404)
