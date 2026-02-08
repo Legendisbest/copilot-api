@@ -82,17 +82,34 @@ docker run -p 4141:4141 -v $(pwd)/copilot-data:/root/.local/share/copilot-api co
 
 ### Docker with Environment Variables
 
-You can pass the GitHub token directly to the container using environment variables:
+You can pass the GitHub token and DB settings directly as environment variables:
 
 ```sh
-# Build with GitHub token
-docker build --build-arg GH_TOKEN=your_github_token_here -t copilot-api .
-
 # Run with GitHub token
 docker run -p 4141:4141 -e GH_TOKEN=your_github_token_here copilot-api
 
-# Run with additional options
-docker run -p 4141:4141 -e GH_TOKEN=your_token copilot-api start --verbose --port 4141
+# Run with explicit start flags (entrypoint auto-routes flags to the start subcommand)
+docker run -p 4141:4141 -e GH_TOKEN=your_token copilot-api --verbose --port 4141
+
+# PostgreSQL
+docker run -p 4141:4141 \
+  -e GH_TOKEN=your_token \
+  -e DATABASE_URL=postgres://user:pass@db:5432/copilot \
+  copilot-api
+
+# MySQL
+docker run -p 4141:4141 \
+  -e GH_TOKEN=your_token \
+  -e DB_CLIENT=mysql \
+  -e MYSQL_URL=mysql://user:pass@db:3306/copilot \
+  copilot-api
+
+# MongoDB
+docker run -p 4141:4141 \
+  -e GH_TOKEN=your_token \
+  -e DB_CLIENT=mongodb \
+  -e MONGODB_URL=mongodb://user:pass@db:27017/copilot \
+  copilot-api
 ```
 
 ### Docker Compose Example
@@ -112,7 +129,6 @@ services:
 The Docker image includes:
 
 - Multi-stage build for optimized image size
-- Non-root user for enhanced security
 - Health check for container monitoring
 - Pinned base image version for reproducible builds
 
