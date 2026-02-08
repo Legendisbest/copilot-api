@@ -150,9 +150,14 @@ class AccountManager {
   ): Promise<AccountState> {
     const normalizedAccountType = normalizeAccountType(accountType)
 
-    const userInfo = await this.callWithToken(githubToken, normalizedAccountType, async () => {
+    const userInfo = await this.callWithToken(
+      githubToken,
+      normalizedAccountType,
+      null,
+      async () => {
       return await getGitHubUser()
-    })
+      },
+    )
     const username = (userInfo as { login?: string }).login ?? "unknown"
 
     const record = await getDataStore().createAccount({
@@ -772,6 +777,7 @@ class AccountManager {
     const tokenResponse = await this.callWithToken(
       account.githubToken,
       account.accountType,
+      null,
       async () => {
         return await getCopilotToken()
       },
@@ -803,6 +809,7 @@ class AccountManager {
         const refreshed = await this.callWithToken(
           account.githubToken,
           account.accountType,
+          null,
           async () => getCopilotToken(),
         )
         const { token: newToken, refresh_in: nextRefreshIn } = refreshed as {
@@ -831,6 +838,10 @@ class AccountManager {
   }
 
   private async fetchModelsForAccount(account: AccountState): Promise<void> {
+    if (!account.copilotToken) {
+      throw new Error("Copilot token not found")
+    }
+
     let lastError: Error | null = null
 
     for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -838,6 +849,7 @@ class AccountManager {
         const models = await this.callWithToken(
           account.githubToken,
           account.accountType,
+          account.copilotToken,
           async () => getModels(),
         )
         account.models = models as AccountState["models"]
@@ -862,6 +874,7 @@ class AccountManager {
       const usage = await this.callWithToken(
         account.githubToken,
         account.accountType,
+        null,
         async () => getCopilotUsage(),
       )
       this.applyUsageSnapshot(account, usage as CopilotUsageResponse)
@@ -911,13 +924,14 @@ class AccountManager {
   private async callWithToken<T>(
     githubToken: string,
     accountType: string,
+    copilotToken: string | null,
     fn: () => Promise<T>,
   ): Promise<T> {
     const tempAccount: AccountState = {
       id: "",
       label: null,
       githubToken,
-      copilotToken: null,
+      copilotToken,
       accountType,
       githubUsername: null,
       status: "active",
