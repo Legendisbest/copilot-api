@@ -6,12 +6,20 @@ export const dashboardRoute = new Hono()
 
 // Resolve the web dist directory relative to this file's location
 function getWebDistPath(): string {
-  // Try import.meta.dirname first (Bun/Node 22+)
-  if (import.meta.dirname) {
-    return path.resolve(import.meta.dirname, "../../dist/web")
+  const cwdCandidate = path.resolve(process.cwd(), "dist/web")
+  if (fs.existsSync(path.join(cwdCandidate, "index.html"))) {
+    return cwdCandidate
   }
-  // Fallback: resolve from CWD
-  return path.resolve(process.cwd(), "dist/web")
+
+  // Fallback for unusual runtime layouts.
+  if (import.meta.dirname) {
+    const bundledCandidate = path.resolve(import.meta.dirname, "web")
+    if (fs.existsSync(path.join(bundledCandidate, "index.html"))) {
+      return bundledCandidate
+    }
+  }
+
+  return cwdCandidate
 }
 
 const webDistPath = getWebDistPath()
