@@ -117,6 +117,25 @@ export async function refreshAccountToken(id: string): Promise<void> {
   await apiFetch(`/accounts/${id}/refresh`, { method: "POST" })
 }
 
+export async function refreshAllAccounts(): Promise<{
+  success: boolean
+  refreshed: number
+  failed: number
+}> {
+  return apiFetch("/accounts/actions/refresh-all", { method: "POST" })
+}
+
+export async function resetAllAccountCounters(): Promise<{
+  success: boolean
+  updated: number
+}> {
+  return apiFetch("/accounts/actions/reset-counters", { method: "POST" })
+}
+
+export async function rebalanceAccountWeights(): Promise<{ success: boolean }> {
+  return apiFetch("/accounts/actions/rebalance-weights", { method: "POST" })
+}
+
 export interface DeviceFlowStart {
   flowId: string
   userCode: string
@@ -178,6 +197,7 @@ export interface Stats {
   activeAccounts: number
   rateLimitedAccounts: number
   deadAccounts: number
+  disabledAccounts?: number
   totalRequests: number
   freeAccounts?: number
   premiumAccounts?: number
@@ -185,6 +205,8 @@ export interface Stats {
   dataStore?: string
   rotationStrategy?: string
   freeAccountPolicy?: string
+  limitEnforcementEnabled?: boolean
+  autoDisableFreeExhausted?: boolean
 }
 
 export async function fetchStats(): Promise<Stats> {

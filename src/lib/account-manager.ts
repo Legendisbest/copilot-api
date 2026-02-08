@@ -20,6 +20,12 @@ interface RuntimeSettings {
   freeAccountPolicy: FreeAccountPolicy
   freeAccountExhaustedError: boolean
   freeAccountExhaustedErrorCode: string
+  limitEnforcementEnabled: boolean
+  autoDisableFreeExhausted: boolean
+  autoDisableOnLimitReached: boolean
+  defaultMaxRequestsPerHour: number | null
+  defaultMaxRequestsPerDay: number | null
+  defaultRateLimitCooldownSeconds: number
 }
 
 interface SelectionError {
@@ -33,6 +39,12 @@ const DEFAULT_SETTINGS: RuntimeSettings = {
   freeAccountPolicy: "prefer_free",
   freeAccountExhaustedError: false,
   freeAccountExhaustedErrorCode: "FREE_QUOTA_EXHAUSTED",
+  limitEnforcementEnabled: true,
+  autoDisableFreeExhausted: false,
+  autoDisableOnLimitReached: false,
+  defaultMaxRequestsPerHour: null,
+  defaultMaxRequestsPerDay: null,
+  defaultRateLimitCooldownSeconds: 60,
 }
 
 class AccountManager {
@@ -67,6 +79,30 @@ class AccountManager {
         freeAccountExhaustedErrorCode: parseString(
           values.free_account_exhausted_error_code,
           DEFAULT_SETTINGS.freeAccountExhaustedErrorCode,
+        ),
+        limitEnforcementEnabled: parseBoolean(
+          values.limit_enforcement_enabled,
+          DEFAULT_SETTINGS.limitEnforcementEnabled,
+        ),
+        autoDisableFreeExhausted: parseBoolean(
+          values.auto_disable_free_exhausted,
+          DEFAULT_SETTINGS.autoDisableFreeExhausted,
+        ),
+        autoDisableOnLimitReached: parseBoolean(
+          values.auto_disable_on_limit_reached,
+          DEFAULT_SETTINGS.autoDisableOnLimitReached,
+        ),
+        defaultMaxRequestsPerHour: parseNullableLimit(
+          values.default_max_requests_per_hour,
+          DEFAULT_SETTINGS.defaultMaxRequestsPerHour,
+        ),
+        defaultMaxRequestsPerDay: parseNullableLimit(
+          values.default_max_requests_per_day,
+          DEFAULT_SETTINGS.defaultMaxRequestsPerDay,
+        ),
+        defaultRateLimitCooldownSeconds: parsePositiveInt(
+          values.default_rate_limit_cooldown_seconds,
+          DEFAULT_SETTINGS.defaultRateLimitCooldownSeconds,
         ),
       }
     } catch (error) {
@@ -130,6 +166,8 @@ class AccountManager {
       githubUsername: username,
       status: "active",
       rotationWeight: 1,
+      maxRequestsPerHour: this.runtimeSettings.defaultMaxRequestsPerHour,
+      maxRequestsPerDay: this.runtimeSettings.defaultMaxRequestsPerDay,
     })
 
     const accountState = accountStateFromRecord(record)
@@ -215,6 +253,58 @@ class AccountManager {
     }
 
     await this.persistStatus(account)
+  }
+
+  async refreshAllAccounts(): Promise<{ refreshed: number; failed: number }> {
+    let refreshed = 0
+    let failed = 0
+    const accounts = this.getAllAccounts().filter((account) => {
+      return account.status !== "disabled"
+    })
+
+    for (const account of accounts) {
+      try {
+        await this.refreshAccount(account.id)
+        refreshed += 1
+      } catch {
+        failed += 1
+      }
+    }
+
+    return { refreshed, failed }
+  }
+
+  resetAllCounters(): number {
+    const allAccounts = this.getAllAccounts()
+    const now = Date.now()
+    for (const account of allAccounts) {
+      account.limitWindow.hourly = { startedAt: now, count: 0 }
+      account.limitWindow.daily = { startedAt: now, count: 0 }
+      if (
+        account.lastKnownErrorCode === "ACCOUNT_HOURLY_LIMIT_REACHED"
+        || account.lastKnownErrorCode === "ACCOUNT_DAILY_LIMIT_REACHED"
+      ) {
+        account.lastKnownErrorCode = null
+      }
+    }
+    return allAccounts.length
+  }
+
+  async rebalanceRotationWeights(): Promise<void> {
+    const allAccounts = this.getAllAccounts()
+    for (const account of allAccounts) {
+      const targetWeight = account.isPremium ? 3 : 1
+      if (account.rotationWeight === targetWeight) continue
+      account.rotationWeight = targetWeight
+      try {
+        await getDataStore().updateAccount(account.id, {
+          rotationWeight: targetWeight,
+          updatedAt: new Date(),
+        })
+      } catch {
+        // non-critical
+      }
+    }
   }
 
   async updateAccountConfig(
@@ -325,12 +415,17 @@ class AccountManager {
     })
   }
 
-  markRateLimited(id: string, retryAfterSeconds: number = 60): void {
+  markRateLimited(id: string, retryAfterSeconds?: number): void {
     const account = this.accounts.get(id)
     if (!account) return
 
+    const cooldownSeconds =
+      retryAfterSeconds
+      ?? this.runtimeSettings.defaultRateLimitCooldownSeconds
+      ?? 60
+
     account.status = "rate_limited"
-    account.statusMessage = `Rate limited. Auto-recovery in ${retryAfterSeconds}s`
+    account.statusMessage = `Rate limited. Auto-recovery in ${cooldownSeconds}s`
     account.statusUpdatedAt = new Date()
     this.persistStatus(account).catch(() => {})
 
@@ -345,10 +440,10 @@ class AccountManager {
       account.rateLimitResetTimer = null
       account.lastKnownErrorCode = null
       this.persistStatus(account).catch(() => {})
-    }, retryAfterSeconds * 1000)
+    }, cooldownSeconds * 1000)
 
     consola.warn(
-      `Account ${account.label ?? id} rate limited. Will recover in ${retryAfterSeconds}s`,
+      `Account ${account.label ?? id} rate limited. Will recover in ${cooldownSeconds}s`,
     )
   }
 
@@ -428,6 +523,7 @@ class AccountManager {
     activeAccounts: number
     rateLimitedAccounts: number
     deadAccounts: number
+    disabledAccounts: number
     totalRequests: number
     freeAccounts: number
     premiumAccounts: number
@@ -435,6 +531,8 @@ class AccountManager {
     dataStore: string
     rotationStrategy: RotationStrategy
     freeAccountPolicy: FreeAccountPolicy
+    limitEnforcementEnabled: boolean
+    autoDisableFreeExhausted: boolean
   }> {
     const allAccounts = this.getAllAccounts()
     const freeExhaustedAccounts = allAccounts.filter((account) => {
@@ -453,6 +551,7 @@ class AccountManager {
       deadAccounts: allAccounts.filter(
         (a) => a.status === "dead" || a.status === "forbidden",
       ).length,
+      disabledAccounts: allAccounts.filter((a) => a.status === "disabled").length,
       totalRequests: allAccounts.reduce((sum, a) => sum + a.totalRequests, 0),
       freeAccounts: allAccounts.filter((a) => !a.isPremium).length,
       premiumAccounts: allAccounts.filter((a) => a.isPremium).length,
@@ -460,6 +559,8 @@ class AccountManager {
       dataStore: getDataStoreKind(),
       rotationStrategy: this.runtimeSettings.rotationStrategy,
       freeAccountPolicy: this.runtimeSettings.freeAccountPolicy,
+      limitEnforcementEnabled: this.runtimeSettings.limitEnforcementEnabled,
+      autoDisableFreeExhausted: this.runtimeSettings.autoDisableFreeExhausted,
     }
   }
 
@@ -565,6 +666,10 @@ class AccountManager {
   }
 
   private isWithinRequestLimits(account: AccountState): boolean {
+    if (!this.runtimeSettings.limitEnforcementEnabled) {
+      return true
+    }
+
     const nowMs = Date.now()
     this.resetWindowsIfNeeded(account, nowMs)
 
@@ -573,6 +678,11 @@ class AccountManager {
       && account.limitWindow.hourly.count >= account.maxRequestsPerHour
     ) {
       account.lastKnownErrorCode = "ACCOUNT_HOURLY_LIMIT_REACHED"
+      if (this.runtimeSettings.autoDisableOnLimitReached) {
+        account.status = "disabled"
+        account.statusMessage = "Disabled automatically after hourly limit reached"
+        this.persistStatus(account).catch(() => {})
+      }
       return false
     }
 
@@ -581,6 +691,11 @@ class AccountManager {
       && account.limitWindow.daily.count >= account.maxRequestsPerDay
     ) {
       account.lastKnownErrorCode = "ACCOUNT_DAILY_LIMIT_REACHED"
+      if (this.runtimeSettings.autoDisableOnLimitReached) {
+        account.status = "disabled"
+        account.statusMessage = "Disabled automatically after daily limit reached"
+        this.persistStatus(account).catch(() => {})
+      }
       return false
     }
 
@@ -708,6 +823,11 @@ class AccountManager {
       && premiumSnapshot.remaining <= 0
     ) {
       account.lastKnownErrorCode = this.runtimeSettings.freeAccountExhaustedErrorCode
+      if (this.runtimeSettings.autoDisableFreeExhausted) {
+        account.status = "disabled"
+        account.statusMessage = "Disabled automatically: free quota exhausted"
+        this.persistStatus(account).catch(() => {})
+      }
     } else if (
       account.lastKnownErrorCode === this.runtimeSettings.freeAccountExhaustedErrorCode
     ) {
@@ -818,6 +938,27 @@ const parseString = (value: unknown, fallback: string): string => {
     return value.trim()
   }
   return fallback
+}
+
+const parseNullableLimit = (
+  value: unknown,
+  fallback: number | null,
+): number | null => {
+  if (value === null) return null
+  if (value === undefined) return fallback
+  const parsed =
+    typeof value === "number" ? value : Number.parseInt(String(value), 10)
+  if (!Number.isFinite(parsed) || parsed <= 0) return null
+  return Math.floor(parsed)
+}
+
+const parsePositiveInt = (value: unknown, fallback: number): number => {
+  const parsed =
+    typeof value === "number" ? value : Number.parseInt(String(value), 10)
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback
+  }
+  return Math.floor(parsed)
 }
 
 const normalizeNullableLimit = (value: number | null): number | null => {

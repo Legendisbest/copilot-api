@@ -24,7 +24,7 @@ export function DashboardPage() {
   return (
     <div>
       {/* Stats overview */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-5 lg:grid-cols-9 gap-3 mb-6">
         <StatCard
           label="Total Accounts"
           value={stats?.totalAccounts ?? 0}
@@ -43,6 +43,11 @@ export function DashboardPage() {
           label="Dead/Forbidden"
           value={stats?.deadAccounts ?? 0}
           color="text-red-400"
+        />
+        <StatCard
+          label="Disabled"
+          value={stats?.disabledAccounts ?? 0}
+          color="text-gray-300"
         />
         <StatCard
           label="Total Requests"
@@ -81,6 +86,12 @@ export function DashboardPage() {
         </span>
         <span className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-gray-300">
           Free Policy: {stats?.freeAccountPolicy ?? "prefer_free"}
+        </span>
+        <span className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-gray-300">
+          Limits: {stats?.limitEnforcementEnabled ? "on" : "off"}
+        </span>
+        <span className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-gray-300">
+          Auto Disable Free: {stats?.autoDisableFreeExhausted ? "on" : "off"}
         </span>
       </div>
 

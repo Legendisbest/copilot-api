@@ -31,7 +31,13 @@ export async function updateSettings(c: Context) {
     process.env.JWT_SECRET = body.jwt_secret
   }
 
-  await getDataStore().upsertSettings(body)
+  const settingsToPersist = { ...body }
+  delete settingsToPersist.admin_password
+  delete settingsToPersist.jwt_secret
+
+  if (Object.keys(settingsToPersist).length > 0) {
+    await getDataStore().upsertSettings(settingsToPersist)
+  }
   await accountManager.reloadSettings()
 
   return c.json({

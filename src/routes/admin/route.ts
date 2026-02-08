@@ -4,6 +4,9 @@ import { adminAuth, adminLogin } from "~/middleware/admin-auth"
 import {
   addAccount,
   getAccountUsage,
+  rebalanceWeights,
+  refreshAllAccounts,
+  resetAllCounters,
   getStats,
   listAccounts,
   pollDeviceFlow,
@@ -29,6 +32,9 @@ adminRoutes.delete("/accounts/:id", removeAccount)
 adminRoutes.patch("/accounts/:id", updateAccount)
 adminRoutes.post("/accounts/:id/refresh", refreshAccountToken)
 adminRoutes.get("/accounts/:id/usage", getAccountUsage)
+adminRoutes.post("/accounts/actions/refresh-all", refreshAllAccounts)
+adminRoutes.post("/accounts/actions/reset-counters", resetAllCounters)
+adminRoutes.post("/accounts/actions/rebalance-weights", rebalanceWeights)
 
 // Device flow for adding accounts via dashboard
 adminRoutes.post("/accounts/device-flow/start", startDeviceFlow)

@@ -12,6 +12,18 @@ import { UsageBar } from "./UsageBar"
 
 const FREE_QUOTA_EXHAUSTED_CODE = "FREE_QUOTA_EXHAUSTED"
 
+const toInputValue = (value: number | null): string => {
+  return value === null ? "" : String(value)
+}
+
+const parseOptionalPositiveInt = (value: string): number | null => {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const parsed = Number.parseInt(trimmed, 10)
+  if (Number.isNaN(parsed) || parsed <= 0) return null
+  return parsed
+}
+
 export function AccountCard({
   account,
   onRefresh,
@@ -23,6 +35,11 @@ export function AccountCard({
   const [usage, setUsage] = useState<AccountUsage | null>(null)
   const [showUsage, setShowUsage] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [labelDraft, setLabelDraft] = useState(account.label ?? "")
+  const [hourlyDraft, setHourlyDraft] = useState(toInputValue(account.maxRequestsPerHour))
+  const [dailyDraft, setDailyDraft] = useState(toInputValue(account.maxRequestsPerDay))
+  const [weightDraft, setWeightDraft] = useState(String(account.rotationWeight))
 
   const limitSummary = useMemo(() => {
     const hourly = account.maxRequestsPerHour
@@ -31,7 +48,7 @@ export function AccountCard({
     const parts = new Array<string>()
     if (hourly) parts.push(`${hourly}/hour`)
     if (daily) parts.push(`${daily}/day`)
-    return parts.join(" • ")
+    return parts.join(" | ")
   }, [account.maxRequestsPerDay, account.maxRequestsPerHour])
 
   async function handleAction(action: () => Promise<void>) {
@@ -65,49 +82,34 @@ export function AccountCard({
     }
   }
 
-  async function handleConfigureLimits() {
-    const nextHourly = prompt(
-      "Max requests per hour (empty to remove)",
-      account.maxRequestsPerHour?.toString() ?? "",
-    )
-    if (nextHourly === null) return
-    const nextDaily = prompt(
-      "Max requests per day (empty to remove)",
-      account.maxRequestsPerDay?.toString() ?? "",
-    )
-    if (nextDaily === null) return
-    const nextWeight = prompt(
-      "Rotation weight (>=1)",
-      account.rotationWeight.toString(),
-    )
-    if (nextWeight === null) return
+  async function handleSaveEdits() {
+    const parsedHourly = parseOptionalPositiveInt(hourlyDraft)
+    const parsedDaily = parseOptionalPositiveInt(dailyDraft)
+    const parsedWeight = Number.parseInt(weightDraft, 10)
 
-    const parsedHourly =
-      nextHourly.trim() === "" ? null : Number.parseInt(nextHourly, 10)
-    const parsedDaily =
-      nextDaily.trim() === "" ? null : Number.parseInt(nextDaily, 10)
-    const parsedWeight = Number.parseInt(nextWeight, 10)
-
-    if (parsedHourly !== null && (Number.isNaN(parsedHourly) || parsedHourly <= 0)) {
-      setError("Hourly limit must be a positive number or empty")
-      return
-    }
-    if (parsedDaily !== null && (Number.isNaN(parsedDaily) || parsedDaily <= 0)) {
-      setError("Daily limit must be a positive number or empty")
-      return
-    }
-    if (Number.isNaN(parsedWeight) || parsedWeight <= 0) {
-      setError("Rotation weight must be a positive number")
+    if (weightDraft.trim().length === 0 || Number.isNaN(parsedWeight) || parsedWeight <= 0) {
+      setError("Rotation weight must be a positive number.")
       return
     }
 
     await handleAction(async () => {
       await updateAccount(account.id, {
+        label: labelDraft.trim() ? labelDraft.trim() : null,
         maxRequestsPerHour: parsedHourly,
         maxRequestsPerDay: parsedDaily,
         rotationWeight: parsedWeight,
       })
+      setEditing(false)
     })
+  }
+
+  function handleCancelEdits() {
+    setEditing(false)
+    setLabelDraft(account.label ?? "")
+    setHourlyDraft(toInputValue(account.maxRequestsPerHour))
+    setDailyDraft(toInputValue(account.maxRequestsPerDay))
+    setWeightDraft(String(account.rotationWeight))
+    setError(null)
   }
 
   const freeExhausted = Boolean(
@@ -139,7 +141,7 @@ export function AccountCard({
             )}
           </div>
           <p className="text-xs text-gray-500">
-            @{account.githubUsername ?? "unknown"} · {account.accountType}
+            @{account.githubUsername ?? "unknown"} | {account.accountType}
           </p>
         </div>
         <StatusBadge status={account.status} />
@@ -186,6 +188,63 @@ export function AccountCard({
           Weight: <span className="text-gray-200">{account.rotationWeight}</span>
         </p>
       </div>
+
+      {editing && (
+        <div className="mb-3 rounded border border-indigo-500/30 bg-indigo-500/10 p-3 space-y-2">
+          <label className="text-xs text-indigo-100 flex flex-col gap-1">
+            Label
+            <input
+              value={labelDraft}
+              onChange={(event) => setLabelDraft(event.target.value)}
+              className="px-2 py-1 bg-gray-900 border border-gray-700 rounded text-sm text-white"
+            />
+          </label>
+          <div className="grid grid-cols-3 gap-2">
+            <label className="text-xs text-indigo-100 flex flex-col gap-1">
+              Hourly limit
+              <input
+                value={hourlyDraft}
+                onChange={(event) => setHourlyDraft(event.target.value)}
+                placeholder="none"
+                className="px-2 py-1 bg-gray-900 border border-gray-700 rounded text-sm text-white"
+              />
+            </label>
+            <label className="text-xs text-indigo-100 flex flex-col gap-1">
+              Daily limit
+              <input
+                value={dailyDraft}
+                onChange={(event) => setDailyDraft(event.target.value)}
+                placeholder="none"
+                className="px-2 py-1 bg-gray-900 border border-gray-700 rounded text-sm text-white"
+              />
+            </label>
+            <label className="text-xs text-indigo-100 flex flex-col gap-1">
+              Rotation weight
+              <input
+                value={weightDraft}
+                onChange={(event) => setWeightDraft(event.target.value)}
+                className="px-2 py-1 bg-gray-900 border border-gray-700 rounded text-sm text-white"
+              />
+            </label>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleSaveEdits}
+              disabled={loading}
+              className="px-2.5 py-1 text-xs rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+            >
+              Save
+            </button>
+            <button
+              onClick={handleCancelEdits}
+              disabled={loading}
+              className="px-2.5 py-1 text-xs rounded bg-gray-700 text-gray-200 hover:bg-gray-600 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {showUsage && usage?.quota_snapshots && (
         <div className="mb-3 p-2 bg-gray-800/30 rounded">
@@ -248,15 +307,17 @@ export function AccountCard({
           Refresh
         </button>
         <button
-          onClick={handleConfigureLimits}
+          onClick={() => setEditing((value) => !value)}
           disabled={loading}
           className="px-2.5 py-1 text-xs rounded bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/30 disabled:opacity-50 transition-colors"
         >
-          Limits
+          {editing ? "Close Edit" : "Edit"}
         </button>
         <button
           onClick={() =>
-            handleAction(() => updateAccount(account.id, { action: "reset_counters" }).then(() => {}))
+            handleAction(() =>
+              updateAccount(account.id, { action: "reset_counters" }).then(() => {}),
+            )
           }
           disabled={loading}
           className="px-2.5 py-1 text-xs rounded bg-cyan-600/20 text-cyan-300 hover:bg-cyan-600/30 disabled:opacity-50 transition-colors"
@@ -291,11 +352,7 @@ export function AccountCard({
         <button
           onClick={() =>
             handleAction(async () => {
-              if (
-                confirm(
-                  `Remove account "${account.label ?? account.githubUsername}"?`,
-                )
-              ) {
+              if (confirm(`Remove account "${account.label ?? account.githubUsername}"?`)) {
                 await removeAccount(account.id)
               }
             })

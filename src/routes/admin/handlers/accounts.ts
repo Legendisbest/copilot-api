@@ -295,3 +295,42 @@ export async function getStats(c: Context) {
   const stats = await accountManager.getStats()
   return c.json(stats)
 }
+
+/** Refresh tokens/models for all non-disabled accounts */
+export async function refreshAllAccounts(c: Context) {
+  try {
+    const result = await accountManager.refreshAllAccounts()
+    return c.json({ success: true, ...result })
+  } catch (error) {
+    return c.json(
+      { error: `Failed to refresh all accounts: ${(error as Error).message}` },
+      500,
+    )
+  }
+}
+
+/** Reset hourly/daily counters for all accounts */
+export async function resetAllCounters(c: Context) {
+  try {
+    const updated = accountManager.resetAllCounters()
+    return c.json({ success: true, updated })
+  } catch (error) {
+    return c.json(
+      { error: `Failed to reset counters: ${(error as Error).message}` },
+      500,
+    )
+  }
+}
+
+/** Rebalance rotation weights: premium=3, free=1 */
+export async function rebalanceWeights(c: Context) {
+  try {
+    await accountManager.rebalanceRotationWeights()
+    return c.json({ success: true })
+  } catch (error) {
+    return c.json(
+      { error: `Failed to rebalance weights: ${(error as Error).message}` },
+      500,
+    )
+  }
+}
