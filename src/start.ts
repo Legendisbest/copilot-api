@@ -257,12 +257,12 @@ export async function runServer(options: RunServerOptions): Promise<void> {
     }
   }
 
-  const dashboardUrl = persistentStore
-    ? `\nDashboard: ${publicServerUrl}/dashboard`
-    : ""
-  consola.box(
-    `Usage Viewer: https://ericc-ch.github.io/copilot-api?endpoint=${publicServerUrl}/usage${dashboardUrl}`,
-  )
+  const startupLinks = [
+    `Usage JSON: ${publicServerUrl}/usage`,
+    `Dashboard: ${publicServerUrl}/dashboard`,
+    `Admin: ${publicServerUrl}/admin`,
+  ]
+  consola.box(startupLinks.join("\n"))
 
   const { server } = await import("./server")
 

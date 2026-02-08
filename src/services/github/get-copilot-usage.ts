@@ -31,7 +31,7 @@ interface QuotaSnapshots {
   premium_interactions: QuotaDetail
 }
 
-interface CopilotUsageResponse {
+export interface CopilotUsageResponse {
   access_type_sku: string
   analytics_tracking_id: string
   assigned_date: string

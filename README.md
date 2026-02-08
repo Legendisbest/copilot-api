@@ -314,26 +314,19 @@ npx @jeffreycao/copilot-api@latest debug --json
 npx @jeffreycao/copilot-api@latest start --proxy-env
 ```
 
-## Using the Usage Viewer
+## Using the Built-In Dashboard
 
-After starting the server, a URL to the Copilot Usage Dashboard will be displayed in your console. This dashboard is a web interface for monitoring your API usage.
+After starting the server, the console prints first-party links for your own deployment:
 
-1.  Start the server. For example, using npx:
-    ```sh
-    npx @jeffreycao/copilot-api@latest start
-    ```
-2.  The server will output a URL to the usage viewer. Copy and paste this URL into your browser. It will look something like this:
-    `https://ericc-ch.github.io/copilot-api?endpoint=http://localhost:8080/usage`
-    - If you use the `start.bat` script on Windows, this page will open automatically.
+- `Usage JSON: http://localhost:8080/usage`
+- `Dashboard: http://localhost:8080/dashboard`
+- `Admin: http://localhost:8080/admin`
 
-The dashboard provides a user-friendly interface to view your Copilot usage data:
+On Railway, replace `http://localhost:8080` with your Railway public URL, for example:
 
-- **API Endpoint URL**: The dashboard is pre-configured to fetch data from your local server endpoint via the URL query parameter. You can change this URL to point to any other compatible API endpoint.
-- **Fetch Data**: Click the "Fetch" button to load or refresh the usage data. The dashboard will automatically fetch data on load.
-- **Usage Quotas**: View a summary of your usage quotas for different services like Chat and Completions, displayed with progress bars for a quick overview.
-- **Detailed Information**: See the full JSON response from the API for a detailed breakdown of all available usage statistics.
-- **URL-based Configuration**: You can also specify the API endpoint directly in the URL using a query parameter. This is useful for bookmarks or sharing links. For example:
-  `https://ericc-ch.github.io/copilot-api?endpoint=http://your-api-server/usage`
+- `https://your-service.up.railway.app/usage`
+- `https://your-service.up.railway.app/dashboard`
+- `https://your-service.up.railway.app/admin`
 
 ## Using with Claude Code
 

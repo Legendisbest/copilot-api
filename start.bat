@@ -1,6 +1,6 @@
 @echo off
 echo ================================================
-echo GitHub Copilot API Server with Usage Viewer
+echo GitHub Copilot API Server
 echo ================================================
 echo.
 
@@ -11,10 +11,11 @@ if not exist node_modules (
 )
 
 echo Starting server...
-echo The usage viewer page will open automatically after the server starts
+echo Opening local usage endpoint in your browser...
+echo Dashboard URL: http://localhost:8080/dashboard
 echo.
 
-start "" "https://ericc-ch.github.io/copilot-api?endpoint=http://localhost:8080/usage"
+start "" "http://localhost:8080/usage"
 bun run dev
 
 pause

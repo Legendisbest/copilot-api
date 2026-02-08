@@ -1,6 +1,6 @@
 import consola from "consola"
 
-import type { QuotaDetail } from "~/services/github/get-copilot-usage"
+import type { CopilotUsageResponse } from "~/services/github/get-copilot-usage"
 import { getCopilotToken } from "~/services/github/get-copilot-token"
 import { getGitHubUser } from "~/services/github/get-user"
 import { getModels } from "~/services/copilot/get-models"
@@ -46,6 +46,9 @@ const DEFAULT_SETTINGS: RuntimeSettings = {
   defaultMaxRequestsPerDay: null,
   defaultRateLimitCooldownSeconds: 60,
 }
+
+const PREMIUM_PLAN_HINT = /(?:pro|business|enterprise|team|paid)/i
+const FREE_PLAN_HINT = /(?:free|limited|trial)/i
 
 class AccountManager {
   private readonly accounts: Map<string, AccountState> = new Map()
@@ -124,18 +127,11 @@ class AccountManager {
       this.accounts.set(accountState.id, accountState)
 
       if (accountState.status === "active" || accountState.status === "rate_limited") {
-        try {
-          await this.setupTokenForAccount(accountState)
-          await this.fetchModelsForAccount(accountState)
-          await this.refreshUsageSnapshot(accountState)
-        } catch (error) {
+        await this.synchronizeAccountState(accountState, "Init")
+        if (accountState.status === "dead") {
           consola.error(
-            `Failed to initialize account ${accountState.label ?? accountState.id}:`,
-            error,
+            `Failed to initialize account ${accountState.label ?? accountState.id}: ${accountState.statusMessage ?? "unknown error"}`,
           )
-          accountState.status = "dead"
-          accountState.statusMessage = `Init failed: ${(error as Error).message}`
-          await this.persistStatus(accountState)
         }
       }
     }
@@ -174,15 +170,7 @@ class AccountManager {
     accountState.vsCodeVersion = state.vsCodeVersion ?? null
     this.accounts.set(accountState.id, accountState)
 
-    try {
-      await this.setupTokenForAccount(accountState)
-      await this.fetchModelsForAccount(accountState)
-      await this.refreshUsageSnapshot(accountState)
-    } catch (error) {
-      accountState.status = "dead"
-      accountState.statusMessage = `Setup failed: ${(error as Error).message}`
-      await this.persistStatus(accountState)
-    }
+    await this.synchronizeAccountState(accountState, "Setup")
 
     consola.success(`Added account: ${username} (${accountState.id})`)
     return accountState
@@ -221,16 +209,7 @@ class AccountManager {
     account.status = "active"
     account.statusMessage = null
 
-    try {
-      await this.setupTokenForAccount(account)
-      await this.fetchModelsForAccount(account)
-      await this.refreshUsageSnapshot(account)
-    } catch (error) {
-      account.status = "dead"
-      account.statusMessage = `Re-enable failed: ${(error as Error).message}`
-    }
-
-    await this.persistStatus(account)
+    await this.synchronizeAccountState(account, "Re-enable")
   }
 
   /** Force refresh token for an account */
@@ -241,18 +220,10 @@ class AccountManager {
     if (account.refreshTimer) clearInterval(account.refreshTimer)
     account.refreshTimer = null
 
-    try {
-      await this.setupTokenForAccount(account)
-      await this.fetchModelsForAccount(account)
-      await this.refreshUsageSnapshot(account)
-      account.status = "active"
-      account.statusMessage = null
-    } catch (error) {
-      account.status = "dead"
-      account.statusMessage = `Refresh failed: ${(error as Error).message}`
+    await this.synchronizeAccountState(account, "Refresh")
+    if (account.status === "dead") {
+      throw new Error(account.statusMessage ?? "Refresh failed")
     }
-
-    await this.persistStatus(account)
   }
 
   async refreshAllAccounts(): Promise<{ refreshed: number; failed: number }> {
@@ -614,11 +585,17 @@ class AccountManager {
     }
 
     if (strategy === "weighted") {
+      const minTotalRequests = candidates.reduce((minimum, account) => {
+        return Math.min(minimum, account.totalRequests)
+      }, Number.POSITIVE_INFINITY)
       const weighted = candidates.map((account) => ({
         account,
-        weight: normalizeRotationWeight(account.rotationWeight),
+        weight: this.calculateEffectiveWeight(account, minTotalRequests),
       }))
       const totalWeight = weighted.reduce((sum, item) => sum + item.weight, 0)
+      if (totalWeight <= 0) {
+        return weighted[0].account
+      }
       let ticket = Math.random() * totalWeight
       for (const item of weighted) {
         ticket -= item.weight
@@ -645,6 +622,43 @@ class AccountManager {
     const selected = ordered[this.rotationIndex]
     this.rotationIndex += 1
     return selected
+  }
+
+  private calculateEffectiveWeight(
+    account: AccountState,
+    minTotalRequests: number,
+  ): number {
+    const baseWeight = normalizeRotationWeight(account.rotationWeight)
+    const requestGap = Math.max(0, account.totalRequests - minTotalRequests)
+    const fairnessFactor = 1 / (1 + requestGap / 200)
+    const hourlyLoadFactor = 1 / (1 + account.limitWindow.hourly.count / 25)
+    const premiumCapacityFactor = this.getPremiumCapacityFactor(account)
+    const exhaustionPenalty =
+      account.lastKnownErrorCode === this.runtimeSettings.freeAccountExhaustedErrorCode ?
+        0.2
+      : 1
+
+    return Math.max(
+      0.1,
+      baseWeight
+        * fairnessFactor
+        * hourlyLoadFactor
+        * premiumCapacityFactor
+        * exhaustionPenalty,
+    )
+  }
+
+  private getPremiumCapacityFactor(account: AccountState): number {
+    if (account.isPremium || account.lastKnownPremiumUnlimited === true) {
+      return 1.2
+    }
+
+    const remaining = account.lastKnownPremiumRemaining
+    if (remaining === null) return 1
+    if (remaining <= 0) return 0.2
+    if (remaining < 10) return 0.4
+    if (remaining < 50) return 0.7
+    return 1
   }
 
   private resetWindowsIfNeeded(account: AccountState, nowMs: number): void {
@@ -714,6 +728,45 @@ class AccountManager {
     account.limitWindow.daily.count += 1
   }
 
+  private async synchronizeAccountState(
+    account: AccountState,
+    contextLabel: "Init" | "Setup" | "Re-enable" | "Refresh",
+  ): Promise<void> {
+    try {
+      await this.setupTokenForAccount(account)
+    } catch (error) {
+      account.status = "dead"
+      account.statusMessage = `${contextLabel} failed: ${(error as Error).message}`
+      await this.persistStatus(account)
+      return
+    }
+
+    await this.refreshUsageSnapshot(account)
+
+    try {
+      await this.fetchModelsForAccount(account)
+      if (account.statusMessage?.startsWith("Model sync failed:")) {
+        account.statusMessage = null
+      }
+    } catch (error) {
+      const reason = (error as Error).message
+      if (state.models) {
+        account.models = state.models
+        account.statusMessage =
+          `Model sync failed: ${reason}. Using cached model list.`
+      } else {
+        account.statusMessage =
+          `Model sync failed: ${reason}. Retry refresh after a minute.`
+      }
+    }
+
+    if (account.status !== "disabled" && account.status !== "rate_limited") {
+      account.status = "active"
+    }
+
+    await this.persistStatus(account)
+  }
+
   /** Set up copilot token for a specific account with auto-refresh */
   private async setupTokenForAccount(account: AccountState): Promise<void> {
     const tokenResponse = await this.callWithToken(
@@ -778,12 +831,29 @@ class AccountManager {
   }
 
   private async fetchModelsForAccount(account: AccountState): Promise<void> {
-    const models = await this.callWithToken(
-      account.githubToken,
-      account.accountType,
-      async () => getModels(),
-    )
-    account.models = models as AccountState["models"]
+    let lastError: Error | null = null
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        const models = await this.callWithToken(
+          account.githubToken,
+          account.accountType,
+          async () => getModels(),
+        )
+        account.models = models as AccountState["models"]
+        if (!state.models) {
+          state.models = account.models
+        }
+        return
+      } catch (error) {
+        lastError = error as Error
+        if (attempt < 3) {
+          await sleep(attempt * 400)
+        }
+      }
+    }
+
+    throw lastError ?? new Error("Failed to get models")
   }
 
   async refreshUsageSnapshot(account: AccountState): Promise<void> {
@@ -794,7 +864,7 @@ class AccountManager {
         account.accountType,
         async () => getCopilotUsage(),
       )
-      this.applyUsageSnapshot(account, usage as { quota_snapshots?: { premium_interactions?: QuotaDetail } })
+      this.applyUsageSnapshot(account, usage as CopilotUsageResponse)
       await getDataStore().updateAccount(account.id, {
         isPremium: account.isPremium,
         updatedAt: new Date(),
@@ -806,19 +876,22 @@ class AccountManager {
 
   private applyUsageSnapshot(
     account: AccountState,
-    usage: { quota_snapshots?: { premium_interactions?: QuotaDetail } },
+    usage: Pick<
+      CopilotUsageResponse,
+      "access_type_sku" | "copilot_plan" | "quota_snapshots"
+    >,
   ): void {
     const premiumSnapshot = usage.quota_snapshots?.premium_interactions
-    if (!premiumSnapshot) {
-      return
+    if (premiumSnapshot) {
+      account.lastKnownPremiumRemaining = premiumSnapshot.remaining
+      account.lastKnownPremiumUnlimited = premiumSnapshot.unlimited
     }
 
-    account.lastKnownPremiumRemaining = premiumSnapshot.remaining
-    account.lastKnownPremiumUnlimited = premiumSnapshot.unlimited
-    account.isPremium = premiumSnapshot.unlimited === true
+    account.isPremium = inferPremiumStatus(account, usage)
 
     if (
       !account.isPremium
+      && premiumSnapshot
       && premiumSnapshot.unlimited === false
       && premiumSnapshot.remaining <= 0
     ) {
@@ -891,6 +964,40 @@ class AccountManager {
     }
   }
 }
+
+const inferPremiumStatus = (
+  account: AccountState,
+  usage: Pick<
+    CopilotUsageResponse,
+    "access_type_sku" | "copilot_plan" | "quota_snapshots"
+  >,
+): boolean => {
+  const premiumSnapshot = usage.quota_snapshots?.premium_interactions
+  if (premiumSnapshot?.unlimited === true) {
+    return true
+  }
+
+  const normalizedPlan = usage.copilot_plan.trim().toLowerCase()
+  if (normalizedPlan.length > 0) {
+    if (FREE_PLAN_HINT.test(normalizedPlan)) return false
+    if (PREMIUM_PLAN_HINT.test(normalizedPlan)) return true
+  }
+
+  const normalizedSku = usage.access_type_sku.trim().toLowerCase()
+  if (normalizedSku.length > 0) {
+    if (FREE_PLAN_HINT.test(normalizedSku)) return false
+    if (PREMIUM_PLAN_HINT.test(normalizedSku)) return true
+  }
+
+  if ((premiumSnapshot?.entitlement ?? 0) > 0) {
+    return true
+  }
+
+  return account.isPremium
+}
+
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms))
 
 const normalizeAccountType = (accountType: string): AccountType => {
   if (accountType === "business" || accountType === "enterprise") {
