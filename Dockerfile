@@ -1,3 +1,5 @@
+ARG BUN_VERSION=1.3.6
+
 # Stage 1: Build the web UI dashboard
 FROM node:22-alpine AS web-builder
 WORKDIR /web
@@ -7,7 +9,7 @@ COPY ./web/ ./
 RUN npm run build
 
 # Stage 2: Build the backend
-FROM oven/bun:1.2.19-alpine AS builder
+FROM oven/bun:${BUN_VERSION}-alpine AS builder
 WORKDIR /app
 
 COPY ./package.json ./bun.lock ./
@@ -17,7 +19,7 @@ COPY . .
 RUN bun run build
 
 # Stage 3: Production runner
-FROM oven/bun:1.2.19-alpine AS runner
+FROM oven/bun:${BUN_VERSION}-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
