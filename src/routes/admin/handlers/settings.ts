@@ -1,0 +1,43 @@
+import type { Context } from "hono"
+
+import { accountManager } from "~/lib/account-manager"
+import { getDataStore, getDataStoreKind, isPersistentDataStore } from "~/lib/data-store"
+
+/** Get all settings */
+export async function getSettings(c: Context) {
+  const values = await getDataStore().getSettings()
+  return c.json({
+    ...values,
+    _meta: {
+      dataStore: getDataStoreKind(),
+      persistent: isPersistentDataStore(),
+      runtime: accountManager.getRuntimeSettings(),
+    },
+  })
+}
+
+/** Update settings */
+export async function updateSettings(c: Context) {
+  const body = await c.req.json<Record<string, unknown>>()
+  if (!body || Object.keys(body).length === 0) {
+    return c.json({ error: "No settings provided" }, 400)
+  }
+
+  // Runtime env overrides for auth settings
+  if (typeof body.admin_password === "string" && body.admin_password.length > 0) {
+    process.env.ADMIN_PASSWORD = body.admin_password
+  }
+  if (typeof body.jwt_secret === "string" && body.jwt_secret.length > 0) {
+    process.env.JWT_SECRET = body.jwt_secret
+  }
+
+  await getDataStore().upsertSettings(body)
+  await accountManager.reloadSettings()
+
+  return c.json({
+    success: true,
+    dataStore: getDataStoreKind(),
+    runtime: accountManager.getRuntimeSettings(),
+  })
+}
+

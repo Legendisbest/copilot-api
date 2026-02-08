@@ -3,11 +3,18 @@
 import { defineCommand } from "citty"
 import clipboard from "clipboardy"
 import consola from "consola"
+import fs from "node:fs/promises"
 import { serve, type ServerHandler } from "srvx"
 import invariant from "tiny-invariant"
 
+import { accountManager } from "./lib/account-manager"
 import { mergeConfigWithDefaults } from "./lib/config"
-import { ensurePaths } from "./lib/paths"
+import {
+  getDataStoreKind,
+  initDataStore,
+  isPersistentDataStore,
+} from "./lib/data-store"
+import { ensurePaths, PATHS } from "./lib/paths"
 import { initProxyFromEnv } from "./lib/proxy"
 import { generateEnvScript } from "./lib/shell"
 import { state } from "./lib/state"
@@ -25,6 +32,20 @@ interface RunServerOptions {
   claudeCode: boolean
   showToken: boolean
   proxyEnv: boolean
+  dbClient?: string
+  databaseUrl?: string
+  mysqlUrl?: string
+  mongodbUrl?: string
+  adminPassword?: string
+}
+
+async function tryReadLegacyGithubToken(): Promise<string | null> {
+  try {
+    const token = await fs.readFile(PATHS.GITHUB_TOKEN_PATH, "utf8")
+    return token.trim() || null
+  } catch {
+    return null
+  }
 }
 
 export async function runServer(options: RunServerOptions): Promise<void> {
@@ -51,22 +72,107 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   state.rateLimitWait = options.rateLimitWait
   state.showToken = options.showToken
 
+  // Set admin password and JWT secret from options/env
+  if (options.adminPassword) {
+    process.env.ADMIN_PASSWORD = options.adminPassword
+  }
+
   await ensurePaths()
   await cacheVSCodeVersion()
 
-  if (options.githubToken) {
-    state.githubToken = options.githubToken
-    consola.info("Using provided GitHub token")
+  const databaseUrl = options.databaseUrl ?? process.env.DATABASE_URL
+  const mysqlUrl = options.mysqlUrl ?? process.env.MYSQL_URL
+  const mongodbUrl = options.mongodbUrl ?? process.env.MONGODB_URL
+
+  await initDataStore({
+    client: options.dbClient,
+    databaseUrl,
+    mysqlUrl,
+    mongodbUrl,
+  })
+
+  const persistentStore = isPersistentDataStore()
+
+  if (persistentStore) {
+    consola.info(`Multi-account mode enabled with ${getDataStoreKind()} backend`)
+    await accountManager.initialize()
+
+    if (accountManager.getAllAccounts().length === 0) {
+      const legacyToken = await tryReadLegacyGithubToken()
+      if (legacyToken) {
+        consola.info("Migrating legacy single-account token to data store...")
+        try {
+          await accountManager.addAccount(
+            legacyToken,
+            "migrated-account",
+            options.accountType,
+          )
+        } catch (error) {
+          consola.error("Failed to migrate legacy token:", error)
+        }
+      }
+    }
+
+    if (accountManager.getAllAccounts().length === 0 && options.githubToken) {
+      consola.info("Adding account from CLI --github-token...")
+      try {
+        await accountManager.addAccount(
+          options.githubToken,
+          "cli-account",
+          options.accountType,
+        )
+      } catch (error) {
+        consola.error("Failed to add CLI token account:", error)
+      }
+    }
+
+    if (accountManager.getAllAccounts().length === 0) {
+      consola.info("No accounts found. Starting device flow to add first account...")
+      const { getDeviceCode } = await import("./services/github/get-device-code")
+      const { pollAccessToken } = await import(
+        "./services/github/poll-access-token"
+      )
+
+      const deviceCode = await getDeviceCode()
+      consola.info(
+        `Please enter the code "${deviceCode.user_code}" in ${deviceCode.verification_uri}`,
+      )
+      const token = await pollAccessToken(deviceCode)
+      await accountManager.addAccount(token, "initial-account", options.accountType)
+    }
+
+    const allAccounts = accountManager.getAllAccounts()
+    const activeAccounts = allAccounts.filter((a) => a.status === "active")
+    consola.info(
+      `Accounts: ${activeAccounts.length} active / ${allAccounts.length} total`,
+    )
+
+    const firstActive = activeAccounts[0]
+    if (firstActive?.models) {
+      consola.info(
+        `Available models: \n${firstActive.models.data.map((model) => `- ${model.id}`).join("\n")}`,
+      )
+      if (!state.models) {
+        state.models = firstActive.models
+      }
+    }
   } else {
-    await setupGitHubToken()
+    consola.warn("No database configured. Running in single-account mode.")
+
+    if (options.githubToken) {
+      state.githubToken = options.githubToken
+      consola.info("Using provided GitHub token")
+    } else {
+      await setupGitHubToken()
+    }
+
+    await setupCopilotToken()
+    await cacheModels()
+
+    consola.info(
+      `Available models: \n${state.models?.data.map((model) => `- ${model.id}`).join("\n")}`,
+    )
   }
-
-  await setupCopilotToken()
-  await cacheModels()
-
-  consola.info(
-    `Available models: \n${state.models?.data.map((model) => `- ${model.id}`).join("\n")}`,
-  )
 
   const serverUrl = `http://localhost:${options.port}`
 
@@ -114,8 +220,11 @@ export async function runServer(options: RunServerOptions): Promise<void> {
     }
   }
 
+  const dashboardUrl = persistentStore
+    ? `\nDashboard: ${serverUrl}/dashboard`
+    : ""
   consola.box(
-    `🌐 Usage Viewer: https://ericc-ch.github.io/copilot-api?endpoint=${serverUrl}/usage`,
+    `Usage Viewer: https://ericc-ch.github.io/copilot-api?endpoint=${serverUrl}/usage${dashboardUrl}`,
   )
 
   const { server } = await import("./server")
@@ -193,6 +302,30 @@ export const start = defineCommand({
       default: false,
       description: "Initialize proxy from environment variables",
     },
+    "database-url": {
+      alias: "d",
+      type: "string",
+      description:
+        "Database URL. Supports postgres://, mysql://, mongodb://",
+    },
+    "db-client": {
+      type: "string",
+      description:
+        "Database backend to force (postgres|mysql|mongodb|memory). Optional if URL is explicit.",
+    },
+    "mysql-url": {
+      type: "string",
+      description: "MySQL connection URL (overrides MYSQL_URL env var)",
+    },
+    "mongodb-url": {
+      type: "string",
+      description: "MongoDB connection URL (overrides MONGODB_URL env var)",
+    },
+    "admin-password": {
+      type: "string",
+      description:
+        "Admin dashboard password (overrides ADMIN_PASSWORD env var)",
+    },
   },
   run({ args }) {
     const rateLimitRaw = args["rate-limit"]
@@ -211,6 +344,11 @@ export const start = defineCommand({
       claudeCode: args["claude-code"],
       showToken: args["show-token"],
       proxyEnv: args["proxy-env"],
+      dbClient: args["db-client"],
+      databaseUrl: args["database-url"],
+      mysqlUrl: args["mysql-url"],
+      mongodbUrl: args["mongodb-url"],
+      adminPassword: args["admin-password"],
     })
   },
 })
