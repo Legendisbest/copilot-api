@@ -111,6 +111,10 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   })
 
   const persistentStore = isPersistentDataStore()
+  const isHeadlessRuntime =
+    !process.stdin.isTTY
+    || process.env.RAILWAY_ENVIRONMENT !== undefined
+    || process.env.CI !== undefined
 
   if (persistentStore) {
     consola.info(`Multi-account mode enabled with ${getDataStoreKind()} backend`)
@@ -146,18 +150,25 @@ export async function runServer(options: RunServerOptions): Promise<void> {
     }
 
     if (accountManager.getAllAccounts().length === 0) {
-      consola.info("No accounts found. Starting device flow to add first account...")
-      const { getDeviceCode } = await import("./services/github/get-device-code")
-      const { pollAccessToken } = await import(
-        "./services/github/poll-access-token"
-      )
+      if (isHeadlessRuntime) {
+        consola.warn(
+          "No accounts found in persistent store and runtime is non-interactive. "
+          + "Starting server without accounts. Add accounts via /admin or set GH_TOKEN.",
+        )
+      } else {
+        consola.info("No accounts found. Starting device flow to add first account...")
+        const { getDeviceCode } = await import("./services/github/get-device-code")
+        const { pollAccessToken } = await import(
+          "./services/github/poll-access-token"
+        )
 
-      const deviceCode = await getDeviceCode()
-      consola.info(
-        `Please enter the code "${deviceCode.user_code}" in ${deviceCode.verification_uri}`,
-      )
-      const token = await pollAccessToken(deviceCode)
-      await accountManager.addAccount(token, "initial-account", options.accountType)
+        const deviceCode = await getDeviceCode()
+        consola.info(
+          `Please enter the code "${deviceCode.user_code}" in ${deviceCode.verification_uri}`,
+        )
+        const token = await pollAccessToken(deviceCode)
+        await accountManager.addAccount(token, "initial-account", options.accountType)
+      }
     }
 
     const allAccounts = accountManager.getAllAccounts()
@@ -255,10 +266,14 @@ export async function runServer(options: RunServerOptions): Promise<void> {
 
   const { server } = await import("./server")
 
+  const bindHost = process.env.HOST ?? "0.0.0.0"
+  consola.info(`Server bind: http://${bindHost}:${options.port}`)
+  consola.info(`Server public URL: ${publicServerUrl}`)
+
   serve({
     fetch: server.fetch as ServerHandler,
     port: options.port,
-    hostname: process.env.HOST ?? "0.0.0.0",
+    hostname: bindHost,
     bun: {
       idleTimeout: 0,
     },
