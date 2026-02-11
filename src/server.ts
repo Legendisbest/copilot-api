@@ -2,6 +2,7 @@ import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { logger } from "hono/logger"
 
+import { createAuthMiddleware } from "./lib/request-auth"
 import { completionRoutes } from "./routes/chat-completions/route"
 import { embeddingRoutes } from "./routes/embeddings/route"
 import { messageRoutes } from "./routes/messages/route"
@@ -19,6 +20,7 @@ export const server = new Hono()
 
 server.use(logger())
 server.use(cors())
+server.use("*", createAuthMiddleware())
 
 // Account rotation middleware (no-op in legacy single-account mode)
 server.use("/chat/completions/*", accountRotation)
