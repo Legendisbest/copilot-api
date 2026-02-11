@@ -229,6 +229,7 @@ The following command line options are available for the `start` command:
   }
   ```
 - **auth.apiKeys:** API keys used for request authentication. Supports multiple keys for rotation. Requests can authenticate with either `x-api-key: <key>` or `Authorization: Bearer <key>`. If empty or omitted, authentication is disabled.
+- **Environment override for keys:** You can also provide keys via `AUTH_API_KEYS` (comma/newline-separated), `API_KEYS` (comma/newline-separated), and/or `API_KEY` (single key). These are merged with `auth.apiKeys`.
 - **extraPrompts:** Map of `model -> prompt` appended to the first system prompt when translating Anthropic-style requests to Copilot. Use this to inject guardrails or guidance per model. Missing default entries are auto-added without overwriting your custom prompts.
 - **smallModel:** Fallback model used for tool-less warmup messages (e.g., Claude Code probe requests) to avoid spending premium requests; defaults to `gpt-5-mini`.
 - **modelReasoningEfforts:** Per-model `reasoning.effort` sent to the Copilot Responses API. Allowed values are `none`, `minimal`, `low`, `medium`, `high`, and `xhigh`. If a model isn’t listed, `high` is used by default.
@@ -239,7 +240,8 @@ Edit this file to customize prompts or swap in your own fast model. Restart the 
 
 ## API Authentication
 
-- **Protected routes:** All routes except `/` require authentication when `auth.apiKeys` is configured and non-empty.
+- **Protected routes:** Most routes require authentication when keys are configured.
+- **Always allowed without API key:** `/`, `/health`, `/dashboard/*`, `/assets/*`, `/admin/*`, and CORS preflight (`OPTIONS`) requests.
 - **Allowed auth headers:**
   - `x-api-key: <your_key>`
   - `Authorization: Bearer <your_key>`

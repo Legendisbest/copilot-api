@@ -3,18 +3,17 @@ import { cors } from "hono/cors"
 import { logger } from "hono/logger"
 
 import { createAuthMiddleware } from "./lib/request-auth"
+// Multi-account & dashboard imports
+import { accountRotation } from "./middleware/account-rotation"
+import { adminRoutes } from "./routes/admin/route"
 import { completionRoutes } from "./routes/chat-completions/route"
+import { dashboardRoute } from "./routes/dashboard/route"
 import { embeddingRoutes } from "./routes/embeddings/route"
 import { messageRoutes } from "./routes/messages/route"
 import { modelRoutes } from "./routes/models/route"
 import { responsesRoutes } from "./routes/responses/route"
 import { tokenRoute } from "./routes/token/route"
 import { usageRoute } from "./routes/usage/route"
-
-// Multi-account & dashboard imports
-import { accountRotation } from "./middleware/account-rotation"
-import { adminRoutes } from "./routes/admin/route"
-import { dashboardRoute } from "./routes/dashboard/route"
 
 export const server = new Hono()
 
@@ -32,6 +31,7 @@ server.use("/responses/*", accountRotation)
 server.use("/v1/*", accountRotation)
 
 server.get("/", (c) => c.text("Server running"))
+server.get("/health", (c) => c.json({ ok: true }))
 
 server.route("/chat/completions", completionRoutes)
 server.route("/models", modelRoutes)
