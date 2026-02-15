@@ -15,9 +15,12 @@ export async function detectAccountError(error: unknown): Promise<void> {
 
   const status = error.response.status
 
-  // Billing/quota issues: disable the account so rotation won't keep selecting it.
-  // Expected upstream payload: {"error":{"message":"You have no quota","code":"quota_exceeded"}}
-  if (status >= 400 && status < 500) {
+  // Billing/quota issues (and some account-level "hard limit" errors): disable the account so
+  // rotation won't keep selecting it.
+  // Example payloads:
+  // - {"error":{"message":"You have no quota","code":"quota_exceeded"}}
+  // - {"error":{"message":"You have reached an internal limit. Please contact support ..."}}
+  if (status >= 400) {
     try {
       const details = await parseUpstreamErrorDetails(error.response)
       const code = details.code?.toLowerCase() ?? null
@@ -36,6 +39,22 @@ export async function detectAccountError(error: unknown): Promise<void> {
           account.id,
           "Disabled automatically: quota exceeded (billing/quota issue)",
           "ACCOUNT_QUOTA_EXCEEDED",
+        )
+        return
+      }
+
+      const isInternalLimit =
+        code === "internal_limit"
+        || code === "internal_limit_reached"
+        || message?.includes("reached an internal limit") === true
+        || message?.includes("internal limit") === true
+        || rawText.includes("reached an internal limit")
+
+      if (isInternalLimit) {
+        accountManager.markDisabled(
+          account.id,
+          "Disabled automatically: internal limit reached (contact support)",
+          "ACCOUNT_INTERNAL_LIMIT",
         )
         return
       }
