@@ -451,6 +451,28 @@ class AccountManager {
     consola.error(`Account ${account.label ?? id} marked forbidden: ${message}`)
   }
 
+  markDisabled(id: string, message: string, errorCode: string = "ACCOUNT_DISABLED"): void {
+    const account = this.accounts.get(id)
+    if (!account) return
+
+    account.status = "disabled"
+    account.statusMessage = message
+    account.lastKnownErrorCode = errorCode
+
+    if (account.refreshTimer) {
+      clearInterval(account.refreshTimer)
+      account.refreshTimer = null
+    }
+
+    if (account.rateLimitResetTimer) {
+      clearTimeout(account.rateLimitResetTimer)
+      account.rateLimitResetTimer = null
+    }
+
+    this.persistStatus(account).catch(() => {})
+    consola.warn(`Account ${account.label ?? id} disabled: ${message}`)
+  }
+
   async incrementRequestCount(id: string): Promise<void> {
     const account = this.accounts.get(id)
     if (!account) return
