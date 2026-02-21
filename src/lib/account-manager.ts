@@ -128,7 +128,7 @@ class AccountManager {
 
       if (accountState.status === "active" || accountState.status === "rate_limited") {
         await this.synchronizeAccountState(accountState, "Init")
-        if (accountState.status === "dead") {
+        if ((accountState.status as string) === "dead") {
           consola.error(
             `Failed to initialize account ${accountState.label ?? accountState.id}: ${accountState.statusMessage ?? "unknown error"}`,
           )
@@ -876,7 +876,7 @@ class AccountManager {
         )
         account.models = models as AccountState["models"]
         if (!state.models) {
-          state.models = account.models
+          state.models = account.models ?? undefined
         }
         return
       } catch (error) {

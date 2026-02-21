@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C \"c:\\\\Users\\\\swastik\\\\Desktop\\\\copilot-api\\\\copilot-api\" log --oneline -20)",
+      "Bash(bun add:*)",
+      "Bash(npm install:*)",
+      "Bash(npx vite:*)",
+      "Bash(npx tsc:*)",
+      "Bash(git remote set-url:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: multi-account management, DB persistence, rotation & admin dashboard\n\n- Add multi-account support with round-robin rotation via Proxy + AsyncLocalStorage\n- Add database persistence layer with support for PostgreSQL, MySQL, MongoDB, and in-memory\n- Add account lifecycle management \\(add/remove/enable/disable/refresh\\)\n- Add automatic error detection: marks accounts dead \\(401\\), forbidden \\(403\\), or rate-limited \\(429\\)\n- Add rate-limit auto-recovery with configurable retry-after timers\n- Add admin API with JWT auth for account CRUD, device flow, usage stats, and settings\n- Add React + Vite + Tailwind web dashboard at /dashboard\n- Add request logging per-account for bill splitting visibility\n- Minimal changes to existing files \\(8 modified\\) using Proxy pattern for merge safety\n- Backwards compatible: works as single-account mode without DATABASE_URL\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git commit --no-verify -m \"$\\(cat <<''EOF''\nfeat: multi-account management, DB persistence, rotation & admin dashboard\n\n- Add multi-account support with round-robin rotation via Proxy + AsyncLocalStorage\n- Add database persistence layer with support for PostgreSQL, MySQL, MongoDB, and in-memory\n- Add account lifecycle management \\(add/remove/enable/disable/refresh\\)\n- Add automatic error detection: marks accounts dead \\(401\\), forbidden \\(403\\), or rate-limited \\(429\\)\n- Add rate-limit auto-recovery with configurable retry-after timers\n- Add admin API with JWT auth for account CRUD, device flow, usage stats, and settings\n- Add React + Vite + Tailwind web dashboard at /dashboard\n- Add request logging per-account for bill splitting visibility\n- Minimal changes to existing files \\(8 modified\\) using Proxy pattern for merge safety\n- Backwards compatible: works as single-account mode without DATABASE_URL\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push:*)",
+      "Bash(git -C \"C:\\\\Users\\\\swastik\\\\Desktop\\\\SpotiFLAC\" remote:*)",
+      "Bash(ssh:*)",
+      "Bash(git commit --no-verify -m \"$\\(cat <<''EOF''\nfeat: enhance account manager with bulk actions, inline editing, and extended settings\n\n- Add refreshAllAccounts, resetAllCounters, rebalanceRotationWeights bulk actions\n- Add admin routes for bulk actions \\(/accounts/actions/*\\)\n- Add inline edit UI for account limits/label/weight in AccountCard\n- Extend runtime settings: limitEnforcementEnabled, autoDisableFreeExhausted,\n  autoDisableOnLimitReached, defaultMaxRequests, defaultRateLimitCooldown\n- Add disabledAccounts count to stats endpoint\n- Update dashboard pages to reflect new settings and actions\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git commit --no-verify -m \"$\\(cat <<''EOF''\nfix: improve Dockerfile, entrypoint.sh, and README for multi-account setup\n\n- Switch web UI build stage to node:22-alpine for reliable npm ci\n- Fix web dist copy path in Dockerfile\n- Add NODE_ENV=production and healthcheck wget dependency\n- Rewrite entrypoint.sh with proper subcommand routing and GH_TOKEN injection\n- Update README with PostgreSQL, MySQL, and MongoDB Docker examples\n- Add .gitattributes\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git commit --no-verify -m \"$\\(cat <<''EOF''\nfeat: update Dockerfile, README, and startup improvements\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git commit --no-verify -m \"$\\(cat <<''EOF''\nchore: update Dockerfile and bun.lock\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git commit --no-verify -m \"$\\(cat <<''EOF''\nchore: minor fixes to Dockerfile, README, start scripts, and vite config\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")"
+    ]
+  }
+}
