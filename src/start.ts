@@ -115,7 +115,7 @@ export async function startServer(options: RunServerOptions): Promise<Server> {
   }
 
   consola.box(
-    `🌐 Usage Viewer: https://ericc-ch.github.io/copilot-api?endpoint=${serverUrl}/usage`,
+    `🌐 Usage Viewer: ${serverUrl}/usage-viewer?endpoint=${serverUrl}/usage`,
   )
 
   const { server: app } = await import("./server")
