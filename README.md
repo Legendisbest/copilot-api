@@ -34,10 +34,12 @@ A reverse-engineered proxy for the GitHub Copilot API that exposes it as an Open
 - **OpenAI & Anthropic Compatibility**: Exposes GitHub Copilot as an OpenAI-compatible (`/v1/responses`, `/v1/chat/completions`, `/v1/models`, `/v1/embeddings`) and Anthropic-compatible (`/v1/messages`) API.
 - **Claude Code Integration**: Easily configure and launch [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) to use Copilot as its backend with a simple command-line flag (`--claude-code`).
 - **Usage Dashboard**: A web-based dashboard to monitor your Copilot API usage, view quotas, and see detailed statistics.
-- **Rate Limit Control**: Manage API usage with rate-limiting options (`--rate-limit`) and a waiting mechanism (`--wait`) to prevent errors from rapid requests.
+- **Traffic Shaping & Rate Limit Control**: Manage API usage with a minimum delay (`--rate-limit`) plus runtime controls for jitter, queueing, concurrency, and global request windows.
 - **Manual Request Approval**: Manually approve or deny each API request for fine-grained control over usage (`--manual`).
 - **Token Visibility**: Option to display GitHub and Copilot tokens during authentication and refresh for debugging (`--show-token`).
 - **Flexible Authentication**: Authenticate interactively or provide a GitHub token directly, suitable for CI/CD environments.
+- **Compose-First Deployment**: Includes a ready-to-run `compose.yaml`, `.env.example`, non-root container defaults, and Docker CI validation for easier deployment.
+- **Safer Production Defaults**: Supports API key auth, admin password hardening, CORS restrictions, and persistent runtime settings for exposed deployments.
 - **Support for Different Account Types**: Works with individual, business, and enterprise GitHub Copilot plans.
 
 ## Demo
@@ -59,47 +61,81 @@ bun install
 
 ## Using with Docker
 
-Build image
+### Recommended: Docker Compose
+
+```sh
+cp .env.example .env
+# edit .env before exposing the service
+docker compose up -d --build
+```
+
+The included [`compose.yaml`](./compose.yaml) gives you:
+
+- the API container running as a non-root user
+- a dedicated `/data` volume for tokens, config, and logs
+- a PostgreSQL service for persistent multi-account mode
+- health checks and automatic restart
+- conservative traffic shaping defaults in [`.env.example`](./.env.example)
+
+Minimum variables to change in `.env`:
+
+- `GH_TOKEN`
+- `API_KEY`
+- `ADMIN_PASSWORD`
+- `JWT_SECRET`
+- `POSTGRES_PASSWORD`
+- `CORS_ALLOWED_ORIGINS` for your real public URL(s)
+
+### Manual Docker
+
+Build the image:
 
 ```sh
 docker build -t copilot-api .
 ```
 
-Run the container
+Run the container with persisted state:
 
 ```sh
-# Create a directory on your host to persist the GitHub token and related data
-mkdir -p ./copilot-data
-
-# Run the container with a bind mount to persist the token
-# This ensures your authentication survives container restarts
-
-docker run -p 8080:8080 -v $(pwd)/copilot-data:/root/.local/share/copilot-api copilot-api
+docker run -p 8080:8080 \
+  -e GH_TOKEN=your_github_token_here \
+  -e API_KEY=change-me \
+  -e ADMIN_PASSWORD=change-me \
+  -e JWT_SECRET=replace-with-a-long-random-secret \
+  -e COPILOT_API_HOME=/data \
+  -v $(pwd)/copilot-data:/data \
+  copilot-api
 ```
 
-> **Note:**
-> The GitHub token and related data will be stored in `copilot-data` on your host. This is mapped to `/root/.local/share/copilot-api` inside the container, ensuring persistence across restarts.
-
-### Docker with Environment Variables
-
-You can pass the GitHub token and DB settings directly as environment variables:
+You can also pass explicit start flags:
 
 ```sh
-# Run with GitHub token
-docker run -p 8080:8080 -e GH_TOKEN=your_github_token_here copilot-api
+docker run -p 8080:8080 \
+  -e GH_TOKEN=your_token \
+  -e API_KEY=change-me \
+  -e ADMIN_PASSWORD=change-me \
+  -e JWT_SECRET=replace-with-a-long-random-secret \
+  copilot-api --verbose --port 8080
+```
 
-# Run with explicit start flags (entrypoint auto-routes flags to the start subcommand)
-docker run -p 8080:8080 -e GH_TOKEN=your_token copilot-api --verbose --port 8080
+Database examples:
 
+```sh
 # PostgreSQL
 docker run -p 8080:8080 \
   -e GH_TOKEN=your_token \
+  -e API_KEY=change-me \
+  -e ADMIN_PASSWORD=change-me \
+  -e JWT_SECRET=replace-with-a-long-random-secret \
   -e DATABASE_URL=postgres://user:pass@db:5432/copilot \
   copilot-api
 
 # MySQL
 docker run -p 8080:8080 \
   -e GH_TOKEN=your_token \
+  -e API_KEY=change-me \
+  -e ADMIN_PASSWORD=change-me \
+  -e JWT_SECRET=replace-with-a-long-random-secret \
   -e DB_CLIENT=mysql \
   -e MYSQL_URL=mysql://user:pass@db:3306/copilot \
   copilot-api
@@ -107,29 +143,19 @@ docker run -p 8080:8080 \
 # MongoDB
 docker run -p 8080:8080 \
   -e GH_TOKEN=your_token \
+  -e API_KEY=change-me \
+  -e ADMIN_PASSWORD=change-me \
+  -e JWT_SECRET=replace-with-a-long-random-secret \
   -e DB_CLIENT=mongodb \
   -e MONGODB_URL=mongodb://user:pass@db:27017/copilot \
   copilot-api
-```
-
-### Docker Compose Example
-
-```yaml
-version: "3.8"
-services:
-  copilot-api:
-    build: .
-    ports:
-      - "8080:8080"
-    environment:
-      - GH_TOKEN=your_github_token_here
-    restart: unless-stopped
 ```
 
 The Docker image includes:
 
 - Multi-stage build for optimized image size
 - Health check for container monitoring
+- Non-root runtime user with a dedicated data directory
 - Pinned base image version for reproducible builds
 
 ### Deploy on Railway
@@ -138,13 +164,22 @@ This repo is Railway-ready via the included `Dockerfile`.
 
 1. Create a new Railway service from this repository.
 2. Railway will build with Docker automatically.
-3. Set required env vars: `GH_TOKEN` (recommended for non-interactive startup) and `ADMIN_PASSWORD` (recommended to protect `/admin`).
-4. Set one persistent database option for multi-account mode: `DATABASE_URL` (Postgres), or `DB_CLIENT=mysql` + `MYSQL_URL`, or `DB_CLIENT=mongodb` + `MONGODB_URL`.
+3. Set required env vars: `GH_TOKEN`, `API_KEY`, `ADMIN_PASSWORD`, and `JWT_SECRET`.
+4. Set `CORS_ALLOWED_ORIGINS` to your public domain if browser clients will access the API.
+5. Set one persistent database option for multi-account mode: `DATABASE_URL` (Postgres), or `DB_CLIENT=mysql` + `MYSQL_URL`, or `DB_CLIENT=mongodb` + `MONGODB_URL`.
 
 Notes:
 - No custom start command is required (`ENTRYPOINT` + `CMD ["start"]` are already set).
 - The app auto-uses Railway `PORT` env var, so it will bind to the port Railway provides.
 - If you skip database config, the app runs in single-account mode and relies on local filesystem token persistence.
+- In production, admin login is disabled unless `ADMIN_PASSWORD` is configured.
+
+### Deployment Notes
+
+- `compose.yaml` and `.env.example` are tuned for conservative traffic shaping, but that still does not guarantee GitHub will accept your usage patterns.
+- Set `API_KEY`/`AUTH_API_KEYS` before exposing the API. If you leave auth empty, all API routes are open.
+- Set `CORS_ALLOWED_ORIGINS` if browsers should call the API. Otherwise the server defaults to permissive browser origins.
+- The repository already includes Docker GitHub Actions. Docker images are now built automatically on pushes and pull requests for validation, and pushed on version tags.
 
 ## Using with npx
 
@@ -238,6 +273,35 @@ The following command line options are available for the `start` command:
 
 Edit this file to customize prompts or swap in your own fast model. Restart the server (or rerun the command) after changes so the cached config is refreshed.
 
+## Runtime Environment Overrides
+
+These settings are useful for Docker, Compose, and hosted deployments:
+
+- **API protection:** `API_KEY`, `API_KEYS`, `AUTH_API_KEYS`
+- **Admin protection:** `ADMIN_PASSWORD`, `JWT_SECRET`
+- **Browser exposure:** `CORS_ALLOWED_ORIGINS`, `CORS_ALLOW_CREDENTIALS`
+- **Global traffic shaping:**
+  - `TRAFFIC_CONTROL_ENABLED`
+  - `GLOBAL_MIN_DELAY_MS`
+  - `GLOBAL_DELAY_JITTER_MS`
+  - `GLOBAL_MAX_CONCURRENT_REQUESTS`
+  - `GLOBAL_QUEUE_ENABLED`
+  - `GLOBAL_MAX_QUEUE_SIZE`
+  - `GLOBAL_MAX_QUEUE_WAIT_MS`
+  - `GLOBAL_MAX_REQUESTS_PER_MINUTE`
+  - `GLOBAL_MAX_REQUESTS_PER_HOUR`
+  - `GLOBAL_MAX_REQUESTS_PER_DAY`
+- **Per-account defaults:**
+  - `LIMIT_ENFORCEMENT_ENABLED`
+  - `DEFAULT_MAX_REQUESTS_PER_HOUR`
+  - `DEFAULT_MAX_REQUESTS_PER_DAY`
+  - `DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS`
+  - `FREE_ACCOUNT_POLICY`
+  - `FREE_ACCOUNT_EXHAUSTED_ERROR`
+  - `FREE_ACCOUNT_EXHAUSTED_ERROR_CODE`
+  - `AUTO_DISABLE_FREE_EXHAUSTED`
+  - `AUTO_DISABLE_ON_LIMIT_REACHED`
+
 ## API Authentication
 
 - **Protected routes:** Most routes require authentication when keys are configured.
@@ -247,11 +311,12 @@ Edit this file to customize prompts or swap in your own fast model. Restart the 
   - `Authorization: Bearer <your_key>`
 - **CORS preflight:** `OPTIONS` requests are always allowed.
 - **When no keys are configured:** Server starts normally and allows requests (authentication disabled).
+- **Admin login in production:** Disabled until `ADMIN_PASSWORD` is set.
 
 Example request:
 
 ```sh
-curl http://localhost:4141/v1/models \
+curl http://localhost:8080/v1/models \
   -H "x-api-key: your_api_key"
 ```
 
@@ -472,6 +537,11 @@ bun run start
   - `--manual`: Enables manual approval for each request, giving you full control over when requests are sent.
   - `--rate-limit <seconds>`: Enforces a minimum time interval between requests. For example, `copilot-api start --rate-limit 30` will ensure there's at least a 30-second gap between requests.
   - `--wait`: Use this with `--rate-limit`. It makes the server wait for the cooldown period to end instead of rejecting the request with an error. This is useful for clients that don't automatically retry on rate limit errors.
+- For deployed instances, prefer the runtime traffic controls in `compose.yaml` / `.env.example` or the admin Settings page:
+  - `GLOBAL_MIN_DELAY_MS`, `GLOBAL_DELAY_JITTER_MS`, and `GLOBAL_MAX_CONCURRENT_REQUESTS` smooth request bursts.
+  - `GLOBAL_MAX_REQUESTS_PER_MINUTE`, `GLOBAL_MAX_REQUESTS_PER_HOUR`, and `GLOBAL_MAX_REQUESTS_PER_DAY` cap total outbound load.
+  - `DEFAULT_MAX_REQUESTS_PER_HOUR` and `DEFAULT_MAX_REQUESTS_PER_DAY` cap individual accounts by default.
+- Conservative throttling reduces burstiness and accidental overload, but it does not guarantee compliance or prevent GitHub from taking enforcement action.
 - If you have a GitHub business or enterprise plan account with Copilot, use the `--account-type` flag (e.g., `--account-type business`). See the [official documentation](https://docs.github.com/en/enterprise-cloud@latest/copilot/managing-copilot/managing-github-copilot-in-your-organization/managing-access-to-github-copilot-in-your-organization/managing-github-copilot-access-to-your-organizations-network#configuring-copilot-subscription-based-network-routing-for-your-enterprise-or-organization) for more details.
 
 ### CLAUDE.md Recommended Content

@@ -22,6 +22,9 @@ RUN bun run build
 FROM oven/bun:${BUN_VERSION}-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+ENV HOST=0.0.0.0
+ENV PORT=8080
+ENV COPILOT_API_HOME=/data
 
 COPY ./package.json ./bun.lock ./
 RUN apk add --no-cache wget
@@ -31,14 +34,14 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/pages ./pages
 COPY --from=web-builder /dist/web ./dist/web
 
-EXPOSE 4141
-
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD sh -c 'wget --spider -q "http://localhost:${PORT:-8080}/" || exit 1'
+  CMD sh -c 'wget --spider -q "http://127.0.0.1:${PORT:-8080}/health" || exit 1'
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
+RUN mkdir -p /data && chown -R bun:bun /app /data /entrypoint.sh
 
 EXPOSE 8080
+USER bun
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["start"]

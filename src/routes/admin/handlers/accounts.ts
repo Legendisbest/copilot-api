@@ -1,6 +1,7 @@
 import type { Context } from "hono"
 
 import { accountManager } from "~/lib/account-manager"
+import { trafficControlManager } from "~/lib/traffic-control"
 import { getDeviceCode } from "~/services/github/get-device-code"
 import { pollAccessToken } from "~/services/github/poll-access-token"
 import type { DeviceCodeResponse } from "~/services/github/get-device-code"
@@ -293,7 +294,10 @@ export async function getAccountUsage(c: Context) {
 /** Get aggregated stats */
 export async function getStats(c: Context) {
   const stats = await accountManager.getStats()
-  return c.json(stats)
+  return c.json({
+    ...stats,
+    traffic: trafficControlManager.getStats(),
+  })
 }
 
 /** Refresh tokens/models for all non-disabled accounts */

@@ -73,38 +73,74 @@ class AccountManager {
     try {
       const values = await getDataStore().getSettings()
       this.runtimeSettings = {
-        rotationStrategy: parseRotationStrategy(values.rotation_strategy),
-        freeAccountPolicy: parseFreeAccountPolicy(values.free_account_policy),
+        rotationStrategy: parseRotationStrategy(
+          getEnvOrSetting("ROTATION_STRATEGY", values, "rotation_strategy"),
+        ),
+        freeAccountPolicy: parseFreeAccountPolicy(
+          getEnvOrSetting("FREE_ACCOUNT_POLICY", values, "free_account_policy"),
+        ),
         freeAccountExhaustedError: parseBoolean(
-          values.free_account_exhausted_error,
+          getEnvOrSetting(
+            "FREE_ACCOUNT_EXHAUSTED_ERROR",
+            values,
+            "free_account_exhausted_error",
+          ),
           DEFAULT_SETTINGS.freeAccountExhaustedError,
         ),
         freeAccountExhaustedErrorCode: parseString(
-          values.free_account_exhausted_error_code,
+          getEnvOrSetting(
+            "FREE_ACCOUNT_EXHAUSTED_ERROR_CODE",
+            values,
+            "free_account_exhausted_error_code",
+          ),
           DEFAULT_SETTINGS.freeAccountExhaustedErrorCode,
         ),
         limitEnforcementEnabled: parseBoolean(
-          values.limit_enforcement_enabled,
+          getEnvOrSetting(
+            "LIMIT_ENFORCEMENT_ENABLED",
+            values,
+            "limit_enforcement_enabled",
+          ),
           DEFAULT_SETTINGS.limitEnforcementEnabled,
         ),
         autoDisableFreeExhausted: parseBoolean(
-          values.auto_disable_free_exhausted,
+          getEnvOrSetting(
+            "AUTO_DISABLE_FREE_EXHAUSTED",
+            values,
+            "auto_disable_free_exhausted",
+          ),
           DEFAULT_SETTINGS.autoDisableFreeExhausted,
         ),
         autoDisableOnLimitReached: parseBoolean(
-          values.auto_disable_on_limit_reached,
+          getEnvOrSetting(
+            "AUTO_DISABLE_ON_LIMIT_REACHED",
+            values,
+            "auto_disable_on_limit_reached",
+          ),
           DEFAULT_SETTINGS.autoDisableOnLimitReached,
         ),
         defaultMaxRequestsPerHour: parseNullableLimit(
-          values.default_max_requests_per_hour,
+          getEnvOrSetting(
+            "DEFAULT_MAX_REQUESTS_PER_HOUR",
+            values,
+            "default_max_requests_per_hour",
+          ),
           DEFAULT_SETTINGS.defaultMaxRequestsPerHour,
         ),
         defaultMaxRequestsPerDay: parseNullableLimit(
-          values.default_max_requests_per_day,
+          getEnvOrSetting(
+            "DEFAULT_MAX_REQUESTS_PER_DAY",
+            values,
+            "default_max_requests_per_day",
+          ),
           DEFAULT_SETTINGS.defaultMaxRequestsPerDay,
         ),
         defaultRateLimitCooldownSeconds: parsePositiveInt(
-          values.default_rate_limit_cooldown_seconds,
+          getEnvOrSetting(
+            "DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS",
+            values,
+            "default_rate_limit_cooldown_seconds",
+          ),
           DEFAULT_SETTINGS.defaultRateLimitCooldownSeconds,
         ),
       }
@@ -1075,6 +1111,12 @@ const parseBoolean = (value: unknown, fallback: boolean): boolean => {
   }
   return fallback
 }
+
+const getEnvOrSetting = (
+  envKey: string,
+  values: Record<string, unknown>,
+  settingKey: string,
+): unknown => process.env[envKey] ?? values[settingKey]
 
 const parseString = (value: unknown, fallback: string): string => {
   if (typeof value === "string" && value.trim().length > 0) {

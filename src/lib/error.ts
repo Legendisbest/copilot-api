@@ -3,6 +3,12 @@ import type { ContentfulStatusCode } from "hono/utils/http-status"
 
 import consola from "consola"
 
+const isErrorPayload = (
+  value: unknown,
+): value is { error: { message?: string; type?: string; code?: string } } => {
+  return typeof value === "object" && value !== null && "error" in value
+}
+
 export class HTTPError extends Error {
   response: Response
 
@@ -32,6 +38,12 @@ export async function forwardError(c: Context, error: unknown) {
       errorJson = errorText
     }
     consola.error("HTTP error:", errorJson)
+    if (isErrorPayload(errorJson)) {
+      return c.json(
+        errorJson,
+        error.response.status as ContentfulStatusCode,
+      )
+    }
     return c.json(
       {
         error: {

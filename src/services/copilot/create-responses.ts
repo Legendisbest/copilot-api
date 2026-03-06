@@ -4,6 +4,10 @@ import { events } from "fetch-event-stream"
 import { copilotBaseUrl, copilotHeaders } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
 import { state } from "~/lib/state"
+import {
+  trafficControlManager,
+  wrapAsyncIterableWithLease,
+} from "~/lib/traffic-control"
 
 export interface ResponsesPayload {
   model: string
@@ -332,29 +336,37 @@ export const createResponses = async (
   { vision, initiator }: ResponsesRequestOptions,
 ): Promise<CreateResponsesReturn> => {
   if (!state.copilotToken) throw new Error("Copilot token not found")
+  const lease = await trafficControlManager.acquire("/responses")
 
-  const headers: Record<string, string> = {
-    ...copilotHeaders(state, vision),
-    "X-Initiator": initiator,
+  try {
+    const headers: Record<string, string> = {
+      ...copilotHeaders(state, vision),
+      "X-Initiator": initiator,
+    }
+
+    // service_tier is not supported by github copilot
+    payload.service_tier = null
+
+    const response = await fetch(`${copilotBaseUrl(state)}/responses`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+    })
+
+    if (!response.ok) {
+      consola.error("Failed to create responses", response)
+      throw new HTTPError("Failed to create responses", response)
+    }
+
+    if (payload.stream) {
+      return wrapAsyncIterableWithLease(events(response), lease)
+    }
+
+    const result = (await response.json()) as ResponsesResult
+    lease.release()
+    return result
+  } catch (error) {
+    lease.release()
+    throw error
   }
-
-  // service_tier is not supported by github copilot
-  payload.service_tier = null
-
-  const response = await fetch(`${copilotBaseUrl(state)}/responses`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(payload),
-  })
-
-  if (!response.ok) {
-    consola.error("Failed to create responses", response)
-    throw new HTTPError("Failed to create responses", response)
-  }
-
-  if (payload.stream) {
-    return events(response)
-  }
-
-  return (await response.json()) as ResponsesResult
 }

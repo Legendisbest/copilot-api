@@ -4,6 +4,7 @@ import { logger } from "hono/logger"
 import { readFileSync } from "node:fs"
 
 import { createAuthMiddleware } from "./lib/request-auth"
+import { getCorsOptions } from "./lib/server-security"
 // Multi-account & dashboard imports
 import { accountRotation } from "./middleware/account-rotation"
 import { adminRoutes } from "./routes/admin/route"
@@ -19,7 +20,7 @@ import { usageRoute } from "./routes/usage/route"
 export const server = new Hono()
 
 server.use(logger())
-server.use(cors())
+server.use(cors(getCorsOptions()))
 server.use(
   "*",
   createAuthMiddleware({

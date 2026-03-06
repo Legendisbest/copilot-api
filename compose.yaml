@@ -1,0 +1,53 @@
+name: copilot-api
+
+services:
+  copilot-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: copilot-api:local
+    init: true
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 8080
+      COPILOT_API_HOME: /data
+      DATABASE_URL: ${DATABASE_URL:-postgres://copilot:copilot@postgres:5432/copilot}
+    ports:
+      - "${HOST_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - copilot_api_data:/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-copilot}
+      POSTGRES_USER: ${POSTGRES_USER:-copilot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-copilot}
+    volumes:
+      - copilot_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-copilot} -d ${POSTGRES_DB:-copilot}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  copilot_api_data:
+  copilot_postgres_data:

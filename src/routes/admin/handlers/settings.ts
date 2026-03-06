@@ -2,6 +2,7 @@ import type { Context } from "hono"
 
 import { accountManager } from "~/lib/account-manager"
 import { getDataStore, getDataStoreKind, isPersistentDataStore } from "~/lib/data-store"
+import { trafficControlManager } from "~/lib/traffic-control"
 
 /** Get all settings */
 export async function getSettings(c: Context) {
@@ -12,6 +13,8 @@ export async function getSettings(c: Context) {
       dataStore: getDataStoreKind(),
       persistent: isPersistentDataStore(),
       runtime: accountManager.getRuntimeSettings(),
+      traffic: trafficControlManager.getSettings(),
+      trafficStats: trafficControlManager.getStats(),
     },
   })
 }
@@ -39,11 +42,13 @@ export async function updateSettings(c: Context) {
     await getDataStore().upsertSettings(settingsToPersist)
   }
   await accountManager.reloadSettings()
+  await trafficControlManager.reloadSettings()
 
   return c.json({
     success: true,
     dataStore: getDataStoreKind(),
     runtime: accountManager.getRuntimeSettings(),
+    traffic: trafficControlManager.getSettings(),
   })
 }
 

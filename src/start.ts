@@ -16,9 +16,12 @@ import {
 } from "./lib/data-store"
 import { ensurePaths, PATHS } from "./lib/paths"
 import { initProxyFromEnv } from "./lib/proxy"
+import { getConfiguredApiKeys } from "./lib/request-auth"
+import { getCorsRuntimeConfig } from "./lib/server-security"
 import { generateEnvScript } from "./lib/shell"
 import { state } from "./lib/state"
 import { setupCopilotToken, setupGitHubToken } from "./lib/token"
+import { trafficControlManager } from "./lib/traffic-control"
 import { cacheModels, cacheVSCodeVersion } from "./lib/utils"
 
 interface RunServerOptions {
@@ -56,6 +59,39 @@ function parsePortOrThrow(rawPort: string): number {
     )
   }
   return port
+}
+
+function logSecurityWarnings(): void {
+  const corsRuntimeConfig = getCorsRuntimeConfig()
+  const apiKeys = getConfiguredApiKeys()
+
+  if (apiKeys.length === 0) {
+    consola.warn(
+      "API authentication is disabled. Set API_KEY, API_KEYS, AUTH_API_KEYS, or auth.apiKeys before exposing this service publicly.",
+    )
+  }
+
+  if (corsRuntimeConfig.openToAllOrigins) {
+    consola.warn(
+      "CORS is open to all origins. Set CORS_ALLOWED_ORIGINS to restrict browser access for deployed instances.",
+    )
+  }
+
+  if (process.env.NODE_ENV !== "production") {
+    return
+  }
+
+  if (!process.env.ADMIN_PASSWORD) {
+    consola.warn(
+      "ADMIN_PASSWORD is not set. Admin login is disabled in production until you configure it.",
+    )
+  }
+
+  if (!process.env.JWT_SECRET) {
+    consola.warn(
+      "JWT_SECRET is not set. A runtime-only secret will be used, so admin sessions will be invalidated on restart.",
+    )
+  }
 }
 
 async function tryReadLegacyGithubToken(): Promise<string | null> {
@@ -233,8 +269,6 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   }
 
   state.manualApprove = options.manual
-  state.rateLimitSeconds = options.rateLimit
-  state.rateLimitWait = options.rateLimitWait
   state.showToken = options.showToken
 
   if (options.adminPassword) {
@@ -250,6 +284,12 @@ export async function runServer(options: RunServerOptions): Promise<void> {
     mysqlUrl: options.mysqlUrl ?? process.env.MYSQL_URL,
     mongodbUrl: options.mongodbUrl ?? process.env.MONGODB_URL,
   })
+  await trafficControlManager.reloadSettings()
+  trafficControlManager.setLegacyRateLimit(
+    options.rateLimit,
+    options.rateLimitWait,
+  )
+  logSecurityWarnings()
 
   const isHeadlessRuntime =
     !process.stdin.isTTY

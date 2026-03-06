@@ -11,7 +11,6 @@ import {
   getReasoningEffortForModel,
 } from "~/lib/config"
 import { createHandlerLogger } from "~/lib/logger"
-import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
 import {
   buildErrorEvent,
@@ -54,8 +53,6 @@ const compactSystemPromptStart =
   "You are a helpful AI assistant tasked with summarizing conversations"
 
 export async function handleCompletion(c: Context) {
-  await checkRateLimit(state)
-
   const anthropicPayload = await c.req.json<AnthropicMessagesPayload>()
   logger.debug("Anthropic request payload:", JSON.stringify(anthropicPayload))
 

@@ -5,7 +5,6 @@ import { streamSSE } from "hono/streaming"
 import { awaitApproval } from "~/lib/approval"
 import { getConfig } from "~/lib/config"
 import { createHandlerLogger } from "~/lib/logger"
-import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
 import {
   createResponses,
@@ -21,8 +20,6 @@ const logger = createHandlerLogger("responses-handler")
 const RESPONSES_ENDPOINT = "/responses"
 
 export const handleResponses = async (c: Context) => {
-  await checkRateLimit(state)
-
   const payload = await c.req.json<ResponsesPayload>()
   logger.debug("Responses request payload:", JSON.stringify(payload))
 
