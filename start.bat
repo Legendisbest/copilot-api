@@ -15,7 +15,7 @@ echo Opening local usage endpoint in your browser...
 echo Dashboard URL: http://localhost:8080/dashboard
 echo.
 
-start "" "http://localhost:8080/usage"
+start "" "http://localhost:8080/usage-viewer?endpoint=http://localhost:8080/usage"
 bun run dev
 
 pause

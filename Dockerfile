@@ -28,7 +28,10 @@ RUN apk add --no-cache wget
 RUN bun install --frozen-lockfile --production --ignore-scripts --no-cache
 
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/pages ./pages
 COPY --from=web-builder /dist/web ./dist/web
+
+EXPOSE 4141
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD sh -c 'wget --spider -q "http://localhost:${PORT:-8080}/" || exit 1'

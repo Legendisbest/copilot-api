@@ -1,6 +1,6 @@
 {
   "name": "@jeffreycao/copilot-api",
-  "version": "1.1.6",
+  "version": "1.2.2",
   "description": "Turn GitHub Copilot into OpenAI/Anthropic API compatible server. Usable with Claude Code Or Codex Or Opencode!",
   "keywords": [
     "proxy",
@@ -20,12 +20,13 @@
     "copilot-api": "./dist/main.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "pages"
   ],
   "scripts": {
     "build": "tsdown",
-    "build:web": "cd web && npm run build",
     "build:all": "npm run build:web && npm run build",
+    "build:web": "cd web && npm run build",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",

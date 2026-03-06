@@ -7,7 +7,9 @@ import { state } from "~/lib/state"
 
 export const createChatCompletions = async (
   payload: ChatCompletionsPayload,
-  options?: { initiator?: "agent" | "user" },
+  options?: {
+    initiator?: "agent" | "user"
+  },
 ) => {
   if (!state.copilotToken) throw new Error("Copilot token not found")
 

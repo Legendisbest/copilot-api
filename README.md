@@ -340,15 +340,32 @@ npx @jeffreycao/copilot-api@latest start --proxy-env
 
 After starting the server, the console prints first-party links for your own deployment:
 
+1.  Start the server. For example, using npx:
+    ```sh
+    npx @jeffreycao/copilot-api@latest start
+    ```
+2.  The server will output a URL to the usage viewer. Copy and paste this URL into your browser. It will look something like this:
+    `http://localhost:8080/usage-viewer?endpoint=http://localhost:8080/usage`
+    - If you use the `start.bat` script on Windows, this page will open automatically.
+
 - `Usage JSON: http://localhost:8080/usage`
+- `Usage Viewer: http://localhost:8080/usage-viewer`
 - `Dashboard: http://localhost:8080/dashboard`
 - `Admin: http://localhost:8080/admin`
 
 On Railway, replace `http://localhost:8080` with your Railway public URL, for example:
 
 - `https://your-service.up.railway.app/usage`
+- `https://your-service.up.railway.app/usage-viewer`
 - `https://your-service.up.railway.app/dashboard`
 - `https://your-service.up.railway.app/admin`
+
+- **API Endpoint URL**: The dashboard is pre-configured to fetch data from your local server endpoint via the URL query parameter. You can change this URL to point to any other compatible API endpoint.
+- **Fetch Data**: Click the "Fetch" button to load or refresh the usage data. The dashboard will automatically fetch data on load.
+- **Usage Quotas**: View a summary of your usage quotas for different services like Chat and Completions, displayed with progress bars for a quick overview.
+- **Detailed Information**: See the full JSON response from the API for a detailed breakdown of all available usage statistics.
+- **URL-based Configuration**: You can also specify the API endpoint directly in the URL using a query parameter. This is useful for bookmarks or sharing links. For example:
+  `http://localhost:8080/usage-viewer?endpoint=http://your-api-server/usage`
 
 ## Using with Claude Code
 
@@ -382,7 +399,6 @@ Here is an example `.claude/settings.json` file:
     "ANTHROPIC_MODEL": "gpt-5.2",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "gpt-5.2",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "gpt-5-mini",
-    "CLAUDE_CODE_SUBAGENT_MODEL": "gpt-5-mini",
     "DISABLE_NON_ESSENTIAL_MODEL_CALLS": "1",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     "BASH_MAX_TIMEOUT_MS": "600000",
@@ -400,6 +416,39 @@ Here is an example `.claude/settings.json` file:
 You can find more options here: [Claude Code settings](https://docs.anthropic.com/en/docs/claude-code/settings#environment-variables)
 
 You can also read more about IDE integration here: [Add Claude Code to your IDE](https://docs.anthropic.com/en/docs/claude-code/ide-integrations)
+
+### Subagent Marker Integration (Optional)
+
+This project supports `X-Initiator: agent` for subagent-originated requests.
+
+#### Claude Code plugin producer (marketplace-based)
+
+The marker producer is packaged as a Claude Code plugin named `claude-plugin`.
+
+- Marketplace catalog in this repository: `.claude-plugin/marketplace.json`
+- Plugin source in this repository: `claude-plugin`
+
+Add the marketplace remotely:
+
+```sh
+/plugin marketplace add https://github.com/caozhiyuan/copilot-api.git#all
+```
+
+Install the plugin from the marketplace:
+
+```sh
+/plugin install claude-plugin@copilot-api-marketplace
+```
+
+After installation, the plugin injects `__SUBAGENT_MARKER__...` on `SubagentStart`, and this proxy uses it to infer `X-Initiator: agent`.
+
+#### Opencode plugin producer
+
+For opencode, use the plugin implementation at:
+
+- `.opencode/plugins/subagent-marker.js`
+
+This plugin tracks sub-sessions and prepends a marker system reminder to subagent chat messages.
 
 ## Running from Source
 

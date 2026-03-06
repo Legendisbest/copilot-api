@@ -67,8 +67,154 @@ async function tryReadLegacyGithubToken(): Promise<string | null> {
   }
 }
 
+async function setupMultiAccountMode(
+  options: RunServerOptions,
+  isHeadlessRuntime: boolean,
+): Promise<void> {
+  consola.info(`Multi-account mode enabled with ${getDataStoreKind()} backend`)
+  await accountManager.initialize()
+
+  if (accountManager.getAllAccounts().length === 0) {
+    const legacyToken = await tryReadLegacyGithubToken()
+    if (legacyToken) {
+      consola.info("Migrating legacy single-account token to data store...")
+      try {
+        await accountManager.addAccount(
+          legacyToken,
+          "migrated-account",
+          options.accountType,
+        )
+      } catch (error) {
+        consola.error("Failed to migrate legacy token:", error)
+      }
+    }
+  }
+
+  if (accountManager.getAllAccounts().length === 0 && options.githubToken) {
+    consola.info("Adding account from CLI --github-token...")
+    try {
+      await accountManager.addAccount(
+        options.githubToken,
+        "cli-account",
+        options.accountType,
+      )
+    } catch (error) {
+      consola.error("Failed to add CLI token account:", error)
+    }
+  }
+
+  if (accountManager.getAllAccounts().length === 0) {
+    if (isHeadlessRuntime) {
+      consola.warn(
+        "No accounts found in persistent store and runtime is non-interactive. "
+          + "Starting server without accounts. Add accounts via /admin or set GH_TOKEN.",
+      )
+    } else {
+      consola.info(
+        "No accounts found. Starting device flow to add first account...",
+      )
+      const { getDeviceCode } = await import(
+        "./services/github/get-device-code"
+      )
+      const { pollAccessToken } = await import(
+        "./services/github/poll-access-token"
+      )
+
+      const deviceCode = await getDeviceCode()
+      consola.info(
+        `Please enter the code "${deviceCode.user_code}" in ${deviceCode.verification_uri}`,
+      )
+      const token = await pollAccessToken(deviceCode)
+      await accountManager.addAccount(
+        token,
+        "initial-account",
+        options.accountType,
+      )
+    }
+  }
+
+  const allAccounts = accountManager.getAllAccounts()
+  const activeAccounts = allAccounts.filter((a) => a.status === "active")
+  consola.info(
+    `Accounts: ${activeAccounts.length} active / ${allAccounts.length} total`,
+  )
+
+  const firstActiveModels = activeAccounts.at(0)?.models
+  if (firstActiveModels) {
+    consola.info(
+      `Available models: \n${firstActiveModels.data.map((model) => `- ${model.id}`).join("\n")}`,
+    )
+    if (!state.models) {
+      state.models = firstActiveModels
+    }
+  }
+}
+
+async function setupSingleAccountMode(
+  options: RunServerOptions,
+): Promise<void> {
+  consola.warn("No database configured. Running in single-account mode.")
+
+  if (options.githubToken) {
+    state.githubToken = options.githubToken
+    consola.info("Using provided GitHub token")
+  } else {
+    await setupGitHubToken()
+  }
+
+  await setupCopilotToken()
+  await cacheModels()
+
+  consola.info(
+    `Available models: \n${state.models?.data.map((model) => `- ${model.id}`).join("\n")}`,
+  )
+}
+
+async function generateClaudeCodeCommand(serverUrl: string): Promise<void> {
+  invariant(state.models, "Models should be loaded by now")
+
+  const selectedModel = await consola.prompt(
+    "Select a model to use with Claude Code",
+    {
+      type: "select",
+      options: state.models.data.map((model) => model.id),
+    },
+  )
+
+  const selectedSmallModel = await consola.prompt(
+    "Select a small model to use with Claude Code",
+    {
+      type: "select",
+      options: state.models.data.map((model) => model.id),
+    },
+  )
+
+  const command = generateEnvScript(
+    {
+      ANTHROPIC_BASE_URL: serverUrl,
+      ANTHROPIC_AUTH_TOKEN: "dummy",
+      ANTHROPIC_MODEL: selectedModel,
+      ANTHROPIC_DEFAULT_SONNET_MODEL: selectedModel,
+      ANTHROPIC_SMALL_FAST_MODEL: selectedSmallModel,
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: selectedSmallModel,
+      DISABLE_NON_ESSENTIAL_MODEL_CALLS: "1",
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+    },
+    "claude",
+  )
+
+  try {
+    clipboard.writeSync(command)
+    consola.success("Copied Claude Code command to clipboard!")
+  } catch {
+    consola.warn(
+      "Failed to copy to clipboard. Here is the Claude Code command:",
+    )
+    consola.log(command)
+  }
+}
+
 export async function runServer(options: RunServerOptions): Promise<void> {
-  // Ensure config is merged with defaults at startup
   mergeConfigWithDefaults()
 
   if (options.proxyEnv) {
@@ -91,7 +237,6 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   state.rateLimitWait = options.rateLimitWait
   state.showToken = options.showToken
 
-  // Set admin password and JWT secret from options/env
   if (options.adminPassword) {
     process.env.ADMIN_PASSWORD = options.adminPassword
   }
@@ -99,166 +244,40 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   await ensurePaths()
   await cacheVSCodeVersion()
 
-  const databaseUrl = options.databaseUrl ?? process.env.DATABASE_URL
-  const mysqlUrl = options.mysqlUrl ?? process.env.MYSQL_URL
-  const mongodbUrl = options.mongodbUrl ?? process.env.MONGODB_URL
-
   await initDataStore({
     client: options.dbClient,
-    databaseUrl,
-    mysqlUrl,
-    mongodbUrl,
+    databaseUrl: options.databaseUrl ?? process.env.DATABASE_URL,
+    mysqlUrl: options.mysqlUrl ?? process.env.MYSQL_URL,
+    mongodbUrl: options.mongodbUrl ?? process.env.MONGODB_URL,
   })
 
-  const persistentStore = isPersistentDataStore()
   const isHeadlessRuntime =
     !process.stdin.isTTY
     || process.env.RAILWAY_ENVIRONMENT !== undefined
     || process.env.CI !== undefined
 
-  if (persistentStore) {
-    consola.info(`Multi-account mode enabled with ${getDataStoreKind()} backend`)
-    await accountManager.initialize()
-
-    if (accountManager.getAllAccounts().length === 0) {
-      const legacyToken = await tryReadLegacyGithubToken()
-      if (legacyToken) {
-        consola.info("Migrating legacy single-account token to data store...")
-        try {
-          await accountManager.addAccount(
-            legacyToken,
-            "migrated-account",
-            options.accountType,
-          )
-        } catch (error) {
-          consola.error("Failed to migrate legacy token:", error)
-        }
-      }
-    }
-
-    if (accountManager.getAllAccounts().length === 0 && options.githubToken) {
-      consola.info("Adding account from CLI --github-token...")
-      try {
-        await accountManager.addAccount(
-          options.githubToken,
-          "cli-account",
-          options.accountType,
-        )
-      } catch (error) {
-        consola.error("Failed to add CLI token account:", error)
-      }
-    }
-
-    if (accountManager.getAllAccounts().length === 0) {
-      if (isHeadlessRuntime) {
-        consola.warn(
-          "No accounts found in persistent store and runtime is non-interactive. "
-          + "Starting server without accounts. Add accounts via /admin or set GH_TOKEN.",
-        )
-      } else {
-        consola.info("No accounts found. Starting device flow to add first account...")
-        const { getDeviceCode } = await import("./services/github/get-device-code")
-        const { pollAccessToken } = await import(
-          "./services/github/poll-access-token"
-        )
-
-        const deviceCode = await getDeviceCode()
-        consola.info(
-          `Please enter the code "${deviceCode.user_code}" in ${deviceCode.verification_uri}`,
-        )
-        const token = await pollAccessToken(deviceCode)
-        await accountManager.addAccount(token, "initial-account", options.accountType)
-      }
-    }
-
-    const allAccounts = accountManager.getAllAccounts()
-    const activeAccounts = allAccounts.filter((a) => a.status === "active")
-    consola.info(
-      `Accounts: ${activeAccounts.length} active / ${allAccounts.length} total`,
-    )
-
-    const firstActive = activeAccounts[0]
-    if (firstActive?.models) {
-      consola.info(
-        `Available models: \n${firstActive.models.data.map((model) => `- ${model.id}`).join("\n")}`,
-      )
-      if (!state.models) {
-        state.models = firstActive.models
-      }
-    }
-  } else {
-    consola.warn("No database configured. Running in single-account mode.")
-
-    if (options.githubToken) {
-      state.githubToken = options.githubToken
-      consola.info("Using provided GitHub token")
-    } else {
-      await setupGitHubToken()
-    }
-
-    await setupCopilotToken()
-    await cacheModels()
-
-    consola.info(
-      `Available models: \n${state.models?.data.map((model) => `- ${model.id}`).join("\n")}`,
-    )
-  }
+  await (isPersistentDataStore() ?
+    setupMultiAccountMode(options, isHeadlessRuntime)
+  : setupSingleAccountMode(options))
 
   const serverUrl = `http://localhost:${options.port}`
   const railwayDomain =
     process.env.RAILWAY_PUBLIC_DOMAIN ?? process.env.RAILWAY_STATIC_URL
-  const publicServerUrl = railwayDomain
-    ? /^https?:\/\//.test(railwayDomain)
-      ? railwayDomain
-      : `https://${railwayDomain}`
-    : serverUrl
+  let publicServerUrl = serverUrl
+  if (railwayDomain) {
+    publicServerUrl =
+      /^https?:\/\//.test(railwayDomain) ? railwayDomain : (
+        `https://${railwayDomain}`
+      )
+  }
 
   if (options.claudeCode) {
-    invariant(state.models, "Models should be loaded by now")
-
-    const selectedModel = await consola.prompt(
-      "Select a model to use with Claude Code",
-      {
-        type: "select",
-        options: state.models.data.map((model) => model.id),
-      },
-    )
-
-    const selectedSmallModel = await consola.prompt(
-      "Select a small model to use with Claude Code",
-      {
-        type: "select",
-        options: state.models.data.map((model) => model.id),
-      },
-    )
-
-    const command = generateEnvScript(
-      {
-        ANTHROPIC_BASE_URL: serverUrl,
-        ANTHROPIC_AUTH_TOKEN: "dummy",
-        ANTHROPIC_MODEL: selectedModel,
-        ANTHROPIC_DEFAULT_SONNET_MODEL: selectedModel,
-        ANTHROPIC_SMALL_FAST_MODEL: selectedSmallModel,
-        ANTHROPIC_DEFAULT_HAIKU_MODEL: selectedSmallModel,
-        DISABLE_NON_ESSENTIAL_MODEL_CALLS: "1",
-        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
-      },
-      "claude",
-    )
-
-    try {
-      clipboard.writeSync(command)
-      consola.success("Copied Claude Code command to clipboard!")
-    } catch {
-      consola.warn(
-        "Failed to copy to clipboard. Here is the Claude Code command:",
-      )
-      consola.log(command)
-    }
+    await generateClaudeCodeCommand(serverUrl)
   }
 
   const startupLinks = [
     `Usage JSON: ${publicServerUrl}/usage`,
+    `Usage Viewer: ${serverUrl}/usage-viewer?endpoint=${serverUrl}/usage`,
     `Dashboard: ${publicServerUrl}/dashboard`,
     `Admin: ${publicServerUrl}/admin`,
   ]
@@ -347,8 +366,7 @@ export const start = defineCommand({
     "database-url": {
       alias: "d",
       type: "string",
-      description:
-        "Database URL. Supports postgres://, mysql://, mongodb://",
+      description: "Database URL. Supports postgres://, mysql://, mongodb://",
     },
     "db-client": {
       type: "string",

@@ -13,10 +13,51 @@ import { state } from "~/lib/state"
 export type MessagesStream = ReturnType<typeof events>
 export type CreateMessagesReturn = AnthropicResponse | MessagesStream
 
+const INTERLEAVED_THINKING_BETA = "interleaved-thinking-2025-05-14"
+const allowedAnthropicBetas = new Set([
+  INTERLEAVED_THINKING_BETA,
+  "context-management-2025-06-27",
+  "advanced-tool-use-2025-11-20",
+])
+
+const buildAnthropicBetaHeader = (
+  anthropicBetaHeader: string | undefined,
+  thinking: AnthropicMessagesPayload["thinking"],
+): string | undefined => {
+  const isAdaptiveThinking = thinking?.type === "adaptive"
+
+  if (anthropicBetaHeader) {
+    const filteredBeta = anthropicBetaHeader
+      .split(",")
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0)
+      .filter((item) => allowedAnthropicBetas.has(item))
+    const uniqueFilteredBetas = [...new Set(filteredBeta)]
+    const finalFilteredBetas =
+      isAdaptiveThinking ?
+        uniqueFilteredBetas.filter((item) => item !== INTERLEAVED_THINKING_BETA)
+      : uniqueFilteredBetas
+
+    if (finalFilteredBetas.length > 0) {
+      return finalFilteredBetas.join(",")
+    }
+
+    return undefined
+  }
+
+  if (thinking?.budget_tokens && !isAdaptiveThinking) {
+    return INTERLEAVED_THINKING_BETA
+  }
+
+  return undefined
+}
+
 export const createMessages = async (
   payload: AnthropicMessagesPayload,
   anthropicBetaHeader?: string,
-  options?: { initiator?: "agent" | "user" },
+  options?: {
+    initiator?: "agent" | "user"
+  },
 ): Promise<CreateMessagesReturn> => {
   if (!state.copilotToken) throw new Error("Copilot token not found")
 
@@ -34,24 +75,20 @@ export const createMessages = async (
         lastMessage.content.some((block) => block.type !== "tool_result")
       : true
   }
+  const initiator = options?.initiator ?? (isInitiateRequest ? "user" : "agent")
 
   const headers: Record<string, string> = {
     ...copilotHeaders(state, enableVision),
-    "X-Initiator": options?.initiator ?? (isInitiateRequest ? "user" : "agent"),
+    "X-Initiator": initiator,
   }
 
-  if (anthropicBetaHeader) {
-    // align with vscode copilot extension anthropic-beta
-    const filteredBeta = anthropicBetaHeader
-      .split(",")
-      .map((item) => item.trim())
-      .filter((item) => item !== "claude-code-20250219")
-      .join(",")
-    if (filteredBeta) {
-      headers["anthropic-beta"] = filteredBeta
-    }
-  } else if (payload.thinking?.budget_tokens) {
-    headers["anthropic-beta"] = "interleaved-thinking-2025-05-14"
+  // align with vscode copilot extension anthropic-beta
+  const anthropicBeta = buildAnthropicBetaHeader(
+    anthropicBetaHeader,
+    payload.thinking,
+  )
+  if (anthropicBeta) {
+    headers["anthropic-beta"] = anthropicBeta
   }
 
   const response = await fetch(`${copilotBaseUrl(state)}/v1/messages`, {
