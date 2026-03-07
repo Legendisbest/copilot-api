@@ -26,7 +26,7 @@
   "scripts": {
     "build": "tsdown",
     "build:all": "npm run build:web && npm run build",
-    "build:web": "cd web && npm run build",
+    "build:web": "npm --prefix web install --no-audit --no-fund && npm --prefix web run build",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
